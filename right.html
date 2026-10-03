@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="右手刷弦">
+  <meta name="theme-color" content="#0f0d0b">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <title>右手刷弦（iPad）</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .chordbar { flex: none; display: flex; gap: 8px; padding: 8px 10px; background: #15110d; border-top: 1px solid var(--line); overflow-x: auto; }
+    .chordbar .pad { flex: 1 0 84px; height: 74px; }
+    .chordbar select { flex: none; align-self: center; }
+    #qrBox { display: flex; justify-content: center; margin: 6px 0 12px; }
+    #qrBox svg, #qrBox img { width: 220px; height: 220px; background: #fff; border-radius: 10px; padding: 8px; }
+    .bigcode { text-align: center; font-size: 54px; font-weight: 900; letter-spacing: 10px; color: var(--accent2); font-variant-numeric: tabular-nums; }
+    .steps { color: var(--dim); line-height: 1.7; font-size: 14px; padding-left: 20px; margin: 8px 0; }
+    .url { font-size: 12px; color: var(--dim); word-break: break-all; text-align: center; -webkit-user-select: all; user-select: all; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="bar">
+      <div class="room"><span class="lbl">房號</span><span class="code" id="roomCode">----</span></div>
+      <button id="qrBtn">📱 連手機</button>
+      <div class="status"><span class="dot wait" id="dot"></span><span id="statusText">準備中</span><span class="lat" id="lat"></span></div>
+      <div class="grow"></div>
+      <select id="instSel" aria-label="樂器"></select>
+      <select id="tuneSel" aria-label="調弦"></select>
+      <select id="capoSel" aria-label="移調夾"></select>
+      <button id="chordBtn">和弦列</button>
+      <button id="setBtn" aria-label="設定">⚙︎</button>
+    </div>
+    <div class="stage" id="stage"><canvas id="cv"></canvas></div>
+    <div class="chordbar hidden" id="chordBar"></div>
+  </div>
+
+  <div class="modal hidden" id="qrModal">
+    <div class="sheet scroll">
+      <h2>用手機當左手（指板）</h2>
+      <div class="bigcode" id="qrCode">----</div>
+      <div id="qrBox"></div>
+      <div class="url" id="qrUrl"></div>
+      <ol class="steps">
+        <li>手機和 iPad 連上<b>同一個 Wi-Fi</b>（或 iPad 連手機的個人熱點）。</li>
+        <li>用手機相機掃上面的 QR Code，或打開首頁選「左手」輸入房號。</li>
+        <li>手機轉橫放，左上角顯示綠燈就完成了。</li>
+      </ol>
+      <div class="actions"><button class="primary" data-close>好</button></div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="setModal">
+    <div class="sheet scroll">
+      <h2>設定</h2>
+      <div class="row"><label>音量</label><input type="range" id="volume" min="0" max="1.5" step="0.01"></div>
+      <div class="row"><label>殘響</label><input type="range" id="reverb" min="0" max="2" step="0.01"></div>
+      <div class="row"><label>刷弦力度靈敏度<small>越高 = 輕輕滑也很大聲</small></label><input type="range" id="sens" min="0.4" max="2.5" step="0.01"></div>
+      <div class="row"><label>左手點弦也會發聲<small>Tapping / 搥弦：手機按下琴格就出聲</small></label><input type="checkbox" id="tapping"></div>
+      <div class="row"><label>顯示音名</label><input type="checkbox" id="labels"></div>
+      <div class="row"><label>弦序翻轉<small>預設最粗的弦在上面（和抱吉他往下看一樣）</small></label><input type="checkbox" id="flip"></div>
+      <div class="row"><label>換一個房號</label><button id="newRoom">換房號</button></div>
+      <div class="actions"><button class="primary" data-close>完成</button></div>
+    </div>
+  </div>
+
+  <div class="start" id="start">
+    <div class="big">🎸</div>
+    <h1>右手・刷弦端</h1>
+    <p>上下滑過琴弦＝刷弦，點一下弦＝單音，<br>點琴弦以外的地方＝敲琴身，按住琴橋＝悶音。</p>
+    <button class="primary" id="startBtn">點一下開始（開啟聲音）</button>
+    <p style="font-size:13px">沒聲音？請關掉 iPad 的靜音模式並調高音量。</p>
+  </div>
+
+  <script src="vendor/peerjs.min.js"></script>
+  <script src="vendor/qrcode.js"></script>
+  <script src="js/music.js"></script>
+  <script src="js/guitar-dsp.js"></script>
+  <script src="js/net.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/right.js"></script>
+</body>
+</html>

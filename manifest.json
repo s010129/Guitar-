@@ -1,0 +1,9 @@
+{
+  "name": "雙機吉他",
+  "short_name": "雙機吉他",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0f0d0b",
+  "theme_color": "#0f0d0b",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

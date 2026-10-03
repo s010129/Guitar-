@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="雙機吉他">
+  <meta name="theme-color" content="#0f0d0b">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <title>雙機吉他</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    html, body { overflow: auto; touch-action: auto; -webkit-user-select: auto; user-select: auto; }
+    main { max-width: 860px; margin: 0 auto; padding: calc(24px + env(safe-area-inset-top)) 16px calc(32px + env(safe-area-inset-bottom)); }
+    header { text-align: center; margin-bottom: 22px; }
+    header .logo { font-size: 56px; }
+    header h1 { margin: 6px 0 6px; font-size: 30px; }
+    header p { margin: 0; color: var(--dim); line-height: 1.6; }
+    .roles { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media (max-width: 560px) { .roles { grid-template-columns: 1fr; } }
+    .role { display: block; text-decoration: none; color: var(--text); background: linear-gradient(160deg, #2d241b, #1a1511); border: 1px solid var(--line); border-radius: 18px; padding: 20px; transition: transform .1s; }
+    .role:active { transform: scale(.98); }
+    .role .ic { font-size: 40px; }
+    .role h2 { margin: 6px 0 4px; font-size: 22px; }
+    .role .dev { display: inline-block; font-size: 12px; background: var(--accent); color: #1b1206; border-radius: 99px; padding: 2px 10px; font-weight: 700; }
+    .role p { margin: 10px 0 0; color: var(--dim); line-height: 1.6; font-size: 14px; }
+    section { margin-top: 26px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; }
+    section h3 { margin: 0 0 10px; font-size: 18px; }
+    ol, ul { margin: 0; padding-left: 22px; line-height: 1.8; color: #ddd3c6; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--dim); font-weight: 600; }
+    .yes { color: var(--ok); font-weight: 700; }
+    .no { color: var(--bad); font-weight: 700; }
+    .join { display: flex; gap: 8px; margin-top: 12px; }
+    .join input { width: 110px; text-align: center; font-size: 20px; letter-spacing: 4px; font-weight: 800; }
+    small.note { color: var(--dim); }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="logo">🎸</div>
+      <h1>雙機吉他</h1>
+      <p>手機當<b>左手</b>按和弦，iPad 當<b>右手</b>刷弦發聲。<br>兩台裝置透過 Wi-Fi 點對點連線。</p>
+    </header>
+
+    <div class="roles">
+      <a class="role" href="right.html">
+        <div class="ic">🤚</div>
+        <span class="dev">iPad</span>
+        <h2>右手・刷弦</h2>
+        <p>上下滑過琴弦刷弦、點弦彈單音、點琴身其他地方會有敲擊聲、按住琴橋可以悶音。可切換木吉他、古典、電吉他、破音、貝斯、烏克麗麗、12 弦。聲音從這台出來。</p>
+      </a>
+      <a class="role" href="left.html" id="leftLink">
+        <div class="ic">✋</div>
+        <span class="dev">手機</span>
+        <h2>左手・指板</h2>
+        <p>多指同時按格子、往旁邊的弦拖可以橫按、左右滑是滑音；也可以切到「和弦」模式一鍵按和弦。</p>
+      </a>
+    </div>
+
+    <section>
+      <h3>怎麼開始</h3>
+      <ol>
+        <li>iPad 和手機連<b>同一個 Wi-Fi</b>（沒有 Wi-Fi 的話，讓 iPad 連手機的個人熱點）。</li>
+        <li>iPad 打開「右手」，點「開始」，畫面左上角會出現 4 位數<b>房號</b>。</li>
+        <li>手機用相機掃 iPad 上「📱 連手機」的 QR Code，或在這裡輸入房號：
+          <div class="join"><input id="room" inputmode="numeric" maxlength="4" placeholder="房號"><button class="primary" id="go">當左手連線</button></div>
+        </li>
+        <li>兩邊都亮綠燈就可以彈了。手機建議橫放，放在 iPad 左邊，看起來就像一把吉他。</li>
+      </ol>
+      <p><small class="note">只有 iPad 也能玩：右手頁面下方有「和弦列」，點和弦再刷弦即可。</small></p>
+    </section>
+
+    <section>
+      <h3>連線方式評估：為什麼選網路（WebRTC）</h3>
+      <table>
+        <tr><th>方式</th><th>網頁可行？</th><th>原因</th></tr>
+        <tr><td>藍牙</td><td class="no">不可行</td><td>iPhone / iPad 上所有瀏覽器（Safari、Chrome）都不支援 Web Bluetooth；而且網頁只能當「主控端」，兩台瀏覽器無法互相配對。</td></tr>
+        <tr><td>有線（USB / Lightning）</td><td class="no">不可行</td><td>iOS 不支援 WebUSB / Web Serial，網頁拿不到線材的資料通道。</td></tr>
+        <tr><td>網路 WebRTC</td><td class="yes">✔ 採用</td><td>瀏覽器內建的點對點資料通道，同一個 Wi-Fi 下延遲約 5–20 ms，iOS Safari 完整支援。只有一開始配對時需要連網（PeerJS 免費配對伺服器），之後資料直接在兩台之間傳。</td></tr>
+      </table>
+    </section>
+
+    <section>
+      <h3>小提示</h3>
+      <ul>
+        <li>iPad 沒聲音：關掉靜音模式、調高音量。</li>
+        <li>用 Safari 的「分享 → 加入主畫面」，開啟時就是全螢幕。</li>
+        <li>力道：滑得越快聲音越大；在靠近琴橋的位置彈聲音較亮，靠近琴頸較溫暖。</li>
+        <li>敲琴身：面板中央較低沉（像大鼓），琴身外圍較清脆。</li>
+      </ul>
+    </section>
+  </main>
+  <script>
+    (function () {
+      var input = document.getElementById('room');
+      try { var r = JSON.parse(localStorage.getItem('duoguitar.l.room')); if (r) input.value = r; } catch (e) {}
+      function go() {
+        var v = (input.value || '').replace(/\D/g, '');
+        if (v.length !== 4) { input.focus(); return; }
+        var q = new URLSearchParams(location.search);
+        var url = 'left.html?room=' + v + (q.get('ph') ? '&ph=' + encodeURIComponent(q.get('ph')) : '');
+        location.href = url;
+      }
+      document.getElementById('go').addEventListener('click', go);
+      input.addEventListener('keydown', function (e) { if (e.key === 'Enter') go(); });
+      var ph = new URLSearchParams(location.search).get('ph');
+      if (ph) document.querySelectorAll('a.role').forEach(function (a) { a.href += '?ph=' + encodeURIComponent(ph); });
+    })();
+  </script>
+</body>
+</html>

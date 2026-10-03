@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="左手指板">
+  <meta name="theme-color" content="#0f0d0b">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <title>左手指板（手機）</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .bar { gap: 6px; padding: 0 8px; }
+    .status #statusText { max-width: 34vw; overflow: hidden; text-overflow: ellipsis; }
+    #roomInput { width: 64px; text-align: center; font-weight: 800; letter-spacing: 2px; padding: 5px 4px; }
+    .tabs { display: flex; }
+    .tabs button { border-radius: 0; }
+    .tabs button:first-child { border-radius: 9px 0 0 9px; }
+    .tabs button:last-child { border-radius: 0 9px 9px 0; }
+    #posLbl { font-size: 13px; color: var(--dim); min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; }
+    #instLbl { max-width: 22vw; overflow: hidden; text-overflow: ellipsis; }
+
+    .chordpanel { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 96px; gap: 8px; padding: 8px; background: var(--bg); }
+    .chordpanel .pads { grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(2, 1fr); }
+    .chordpanel .pad .nm { font-size: 30px; }
+    .chordpanel .pad svg { width: 58px; height: 48px; }
+    .chordpanel .side { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+    .chordpanel .side .mute { flex: 1; font-size: 22px; font-weight: 800; }
+    .chordpanel .side select, .chordpanel .side button { width: 100%; font-size: 13px; padding: 7px 4px; }
+    @media (orientation: portrait) {
+      .chordpanel { grid-template-columns: 1fr; grid-template-rows: 1fr 120px; }
+      .chordpanel .pads { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(4, 1fr); }
+      .chordpanel .side { flex-direction: row; flex-wrap: wrap; }
+      .chordpanel .side .mute { flex: 1 1 100%; }
+      .chordpanel .side select, .chordpanel .side button { flex: 1; width: auto; }
+    }
+    .start input { font-size: 40px; width: 200px; text-align: center; letter-spacing: 10px; font-weight: 900; padding: 8px; border-radius: 14px; }
+    .start .link { background: none; border: 0; color: var(--dim); text-decoration: underline; font-size: 15px; padding: 6px; }
+    .picker .preview { text-align: center; font-size: 34px; font-weight: 900; color: var(--accent2); }
+    @media (orientation: landscape) { .picker .sheet { max-width: 820px; } .picker .grid { grid-template-columns: repeat(12, 1fr); } .picker h2 { display: none; } }
+    .picker .grid button { font-size: 13px; padding: 6px 0; }
+    .picker .grid button.on { background: var(--accent); color: #1b1206; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="bar">
+      <div class="status"><span class="dot" id="dot"></span><span id="statusText">未連線</span><span class="lat" id="lat"></span></div>
+      <div class="room"><input id="roomInput" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="房號" aria-label="房號"><button id="joinBtn">連</button></div>
+      <div class="grow"></div>
+      <span class="lbl" id="instLbl"></span>
+      <div class="tabs"><button id="tabFret">指板</button><button id="tabChord">和弦</button></div>
+      <span id="posBox"><button id="posL" aria-label="往琴頭">◀</button><span id="posLbl">1–7</span><button id="posR" aria-label="往高把位">▶</button></span>
+      <button id="setBtn" aria-label="設定">⚙︎</button>
+    </div>
+    <div class="stage" id="stage">
+      <canvas id="cv"></canvas>
+      <div class="chordpanel hidden" id="chordPanel">
+        <div class="pads" id="pads"></div>
+        <div class="side">
+          <button class="pad mute" id="muteBtn">悶音<small style="font-size:12px;font-weight:400">按住</small></button>
+          <select id="presetSel" aria-label="和弦組"></select>
+          <button id="editBtn">✎ 編輯和弦</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="setModal">
+    <div class="sheet scroll">
+      <h2>指板設定</h2>
+      <div class="row"><label>顯示格數</label><select id="fretCount"></select></div>
+      <div class="row"><label>弦序翻轉<small>預設最粗的弦在上面（橫放）/ 左邊（直放）</small></label><input type="checkbox" id="flip"></div>
+      <div class="row"><label>左撇子模式<small>琴頭換到另一邊</small></label><input type="checkbox" id="lefty"></div>
+      <div class="row"><label>按下時顯示音名</label><input type="checkbox" id="names"></div>
+      <div class="row"><label>放開手指時空弦繼續響<small>開 = 勾弦（pull-off）；關 = 放開就止音</small></label><input type="checkbox" id="pullRing"></div>
+      <div class="actions"><button class="primary" data-close>完成</button></div>
+    </div>
+  </div>
+
+  <div class="modal hidden picker" id="pickModal">
+    <div class="sheet scroll">
+      <h2>選擇和弦</h2>
+      <div class="preview" id="pickPreview">C</div>
+      <div class="lbl">根音</div>
+      <div class="grid" id="pickRoots"></div>
+      <div class="lbl">種類</div>
+      <div class="grid" id="pickTypes"></div>
+      <div class="actions"><button data-close>取消</button><button class="primary" id="pickOk">確定</button></div>
+    </div>
+  </div>
+
+  <div class="start hidden" id="start">
+    <div class="big">✋</div>
+    <h1>左手・指板端</h1>
+    <p>輸入 iPad 上顯示的 4 位數房號<br>（或直接用相機掃 iPad 上的 QR Code）</p>
+    <input id="startRoom" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="0000" aria-label="房號">
+    <button class="primary" id="startJoin">連線</button>
+    <button class="link" id="startSkip">先不連線，看看指板</button>
+  </div>
+
+  <script src="vendor/peerjs.min.js"></script>
+  <script src="js/music.js"></script>
+  <script src="js/net.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/left.js"></script>
+</body>
+</html>
