@@ -66,6 +66,8 @@
     store('l.cfg', cfg);
     if (changed) {
       st.muted = new Array(cfg.n).fill(false);
+      // 清掉觸控前，先放開它們按住的「悶音」，否則之後放手也解除不了
+      for (const p of ptrs.values()) if (p.kind === 'mute') st.muteHold = Math.max(0, st.muteHold - 1);
       ptrs.clear();
       amp.length = 0;
     }

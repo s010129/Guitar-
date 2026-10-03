@@ -65,6 +65,7 @@ input { -webkit-user-select: text; user-select: text; }
   white-space: nowrap;
   overflow-x: auto;
   scrollbar-width: none;
+  touch-action: pan-x; /* 窄螢幕（分割畫面）時可以左右滑動工具列 */
 }
 .bar::-webkit-scrollbar { display: none; }
 .bar .grow { flex: 1; }
@@ -136,6 +137,14 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
 .start h1 { margin: 0; font-size: 26px; }
 .start p { margin: 0; color: var(--dim); max-width: 520px; line-height: 1.6; }
 .start button { font-size: 20px; padding: 14px 34px; border-radius: 14px; }
+/* 橫放手機高度不夠：縮小開始畫面，讓所有按鈕都看得到 */
+@media (max-height: 440px) {
+  .start { gap: 8px; padding: 8px 20px; }
+  .start .big { display: none; }
+  .start h1 { font-size: 20px; }
+  .start p { font-size: 13px; line-height: 1.4; }
+  .start button { font-size: 17px; padding: 9px 26px; }
+}
 
 .toast {
   position: fixed;

@@ -264,8 +264,8 @@
     return frets.map((f) => (f < 0 ? 'x' : f > 9 ? '(' + f + ')' : String(f))).join('');
   }
 
-  // 由實際發聲的音判斷和弦名稱
-  function detectChord(notes) {
+  // 由實際發聲的音判斷和弦名稱；reentrant（烏克麗麗等）時最低音不一定是根音，不加低音權重也不寫分數和弦
+  function detectChord(notes, reentrant) {
     if (!notes.length) return '';
     let bassNote = Infinity;
     for (const n of notes) if (n < bassNote) bassNote = n;
@@ -274,7 +274,7 @@
     if (pcs.length === 1) return NAMES[pcs[0]];
     let best = null;
     const consider = (root, id, rank) => {
-      const sc = (root === bass ? 10 : 0) - rank;
+      const sc = (!reentrant && root === bass ? 10 : 0) - rank;
       if (!best || sc > best.sc) best = { root, id, sc };
     };
     for (const root of pcs) {
@@ -282,11 +282,11 @@
       DETECT_TYPES.forEach((t, rank) => {
         const r = rank * 0.1;
         if (t.iv.length === rel.size && t.iv.every((i) => rel.has(i))) consider(root, t.id, r);
-        else if (t.iv.includes(7) && t.iv.length - 1 === rel.size && t.iv.length >= 4 && t.iv.every((i) => i === 7 || rel.has(i))) consider(root, t.id, r + 2);
+        else if (t.iv.includes(7) && t.iv.length - 1 === rel.size && t.iv.length >= 4 && t.iv.every((i) => i === 7 || rel.has(i))) consider(root, t.id, r + 12); // 省略五度的和弦排在完整和弦之後
       });
     }
     if (!best) return '';
-    return NAMES[best.root] + best.id + (best.root !== bass ? '/' + NAMES[bass] : '');
+    return NAMES[best.root] + best.id + (!reentrant && best.root !== bass ? '/' + NAMES[bass] : '');
   }
 
   function tuningsFor(instId) {

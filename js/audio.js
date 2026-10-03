@@ -96,7 +96,15 @@
       comp.ratio.value = 4;
       comp.attack.value = 0.003;
       comp.release.value = 0.2;
-      this.master.connect(comp).connect(ctx.destination);
+      // 限幅器：音量開大、用力刷時也不會破音（削波）
+      const lim = ctx.createDynamicsCompressor();
+      lim.threshold.value = -3;
+      lim.knee.value = 0;
+      lim.ratio.value = 20;
+      lim.attack.value = 0.001;
+      lim.release.value = 0.08;
+      this.master.connect(comp).connect(lim).connect(ctx.destination);
+      this.limiter = lim;
 
       this.reverb = ctx.createConvolver();
       this.reverb.buffer = makeRoomIR(ctx, 1.8);
@@ -136,6 +144,41 @@
       }
       this.ready = true;
       this.setInstrument(this.instId);
+    }
+
+    // iPadOS 16.3 以前沒有 navigator.audioSession：Web Audio 會被靜音模式靜音。
+    // 播放一段真的有取樣的無聲音檔，讓 Safari 把頁面切到「播放」類別。必須在點擊當下同步呼叫。
+    primeMediaSession() {
+      if (navigator.audioSession || this.silentEl) return;
+      const sr = 8000;
+      const n = sr / 2;
+      const buf = new ArrayBuffer(44 + n * 2); // 0.5 秒 16-bit PCM 無聲
+      const v = new DataView(buf);
+      const str = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+      str(0, 'RIFF');
+      v.setUint32(4, 36 + n * 2, true);
+      str(8, 'WAVE');
+      str(12, 'fmt ');
+      v.setUint32(16, 16, true);
+      v.setUint16(20, 1, true);
+      v.setUint16(22, 1, true);
+      v.setUint32(24, sr, true);
+      v.setUint32(28, sr * 2, true);
+      v.setUint16(32, 2, true);
+      v.setUint16(34, 16, true);
+      str(36, 'data');
+      v.setUint32(40, n * 2, true);
+      const el = document.createElement('audio');
+      el.src = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+      el.loop = true;
+      el.setAttribute('playsinline', '');
+      const play = () => { const p = el.play(); if (p && p.catch) p.catch(() => {}); };
+      play();
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') play();
+        else el.pause();
+      });
+      this.silentEl = el;
     }
 
     resume() {

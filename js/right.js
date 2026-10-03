@@ -32,7 +32,6 @@
   st.frets = new Array(nStr()).fill(0);
 
   // ---------------- 連線 ----------------
-  let idTaken = 0;
   const link = new Net.Link({
     role: 'host',
     onStatus(state, text) {
@@ -58,10 +57,10 @@
     onMessage,
   });
   let wasConnected = false;
+  // 房號被別的分頁 / 裝置占用超過約 95 秒（net.js 會先等舊連線釋放）才換新房號
   link.onIdTaken = () => {
-    idTaken++;
-    if (idTaken <= 3) setTimeout(() => link.host(st.room), 2500);
-    else newRoom();
+    newRoom();
+    UI.toast('原房號被占用，已換新房號：' + st.room, 3500);
   };
   function startRoom() {
     store('r.room', st.room);
@@ -70,7 +69,6 @@
     link.host(st.room);
   }
   function newRoom() {
-    idTaken = 0;
     st.room = String(1000 + Math.floor(Math.random() * 9000));
     startRoom();
     if (!$('qrModal').classList.contains('hidden')) showQR();
@@ -132,7 +130,8 @@
   function updateChord() {
     const notes = [];
     st.frets.forEach((f, s) => { if (f >= 0) notes.push(noteOf(s, f)); });
-    chordName = M.detectChord(notes);
+    const tu = tuning();
+    chordName = M.detectChord(notes, tu.some((m, i) => i > 0 && m < tu[i - 1]));
     chordFretsStr = M.fretsToString(st.frets);
     dirty = true;
   }
@@ -645,11 +644,29 @@
       if (bd <= geo.tapTol) {
         pluck(best, clamp(0.62 * Math.pow(settings.sens, 0.3), 0.3, 0.9), x, 0);
         p.armed[best] = false;
+        p.tapS = best; // 手指離開這條弦夠遠之前不再觸發，避免刷弦開頭重複彈
       }
       return;
     }
-    knockAt(x, y, e);
+    // 琴弦附近的觸控可能是刷弦的起手：先等一下，往弦的方向移動就取消敲擊
+    const gapY = y < geo.top ? geo.top - y : y - geo.bot;
+    if (x <= geo.strumEnd && gapY < geo.spacing * 2.5) {
+      p.knockDir = y < geo.top ? 1 : -1;
+      p.y0 = y;
+      p.knockArgs = [x, y, { width: e.width }];
+      p.knockT = setTimeout(() => fireKnock(p), KNOCK_HOLD_MS);
+    } else {
+      knockAt(x, y, e);
+    }
   });
+
+  const KNOCK_HOLD_MS = 28;
+  function fireKnock(p) {
+    if (!p.knockT) return;
+    clearTimeout(p.knockT);
+    p.knockT = 0;
+    knockAt(...p.knockArgs);
+  }
 
   cv.addEventListener('pointermove', (e) => {
     const p = ptrs.get(e.pointerId);
@@ -657,6 +674,10 @@
     const { x, y } = pos(e);
     const t = e.timeStamp;
     if (p.kind === 'palm') return;
+    if (p.knockT && (y - p.y0) * p.knockDir > 5) {
+      clearTimeout(p.knockT); // 是刷弦，不是敲琴身
+      p.knockT = 0;
+    }
     const dt = Math.max(1, t - p.t);
     const dy = y - p.y;
     const v = Math.abs(dy) / dt;
@@ -683,7 +704,14 @@
         }
       }
     }
-    for (let s = 0; s < geo.n; s++) if (!p.armed[s] && Math.abs(y - geo.ys[s]) > geo.hyst) p.armed[s] = true;
+    for (let s = 0; s < geo.n; s++) {
+      if (p.armed[s]) continue;
+      const th = s === p.tapS ? geo.tapTol : geo.hyst;
+      if (Math.abs(y - geo.ys[s]) > th) {
+        p.armed[s] = true;
+        if (s === p.tapS) p.tapS = -1;
+      }
+    }
     p.x = x;
     p.y = y;
     p.t = t;
@@ -693,6 +721,7 @@
     const p = ptrs.get(e.pointerId);
     if (!p) return;
     ptrs.delete(e.pointerId);
+    fireKnock(p); // 很快的點擊：馬上敲
     if (p.kind === 'palm') {
       palmCount = Math.max(0, palmCount - 1);
       dirty = true;
@@ -878,6 +907,7 @@
 
   // 開始（解鎖聲音）
   $('startBtn').addEventListener('click', async () => {
+    audio.primeMediaSession(); // 必須在點擊當下同步呼叫（iPadOS 16.3 以前的靜音模式）
     $('start').classList.add('hidden');
     audio.volume = settings.volume;
     audio.reverbAmt = settings.reverb;

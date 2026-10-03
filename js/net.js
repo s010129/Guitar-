@@ -4,18 +4,13 @@
   'use strict';
 
   const PREFIX = 'duoguitar-v1-';
+  const NET_ERRORS = ['network', 'server-error', 'socket-error', 'socket-closed'];
+  const ID_WAIT_MS = 95000; // 舊連線在配對伺服器上最久約 60~90 秒才會被清掉
 
+  // 不覆寫 config：PeerJS 預設已含 STUN + TURN 中繼（AP 隔離、行動網路時才連得上）
   // ?ph=host:port/path 可改用自架的 PeerJS 伺服器（區網、測試用）
-  function peerOptions() {
-    const opts = {
-      debug: 1,
-      config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-        ],
-      },
-    };
+  function peerOptions(extra) {
+    const opts = Object.assign({ debug: 1 }, extra || {});
     const ph = new URLSearchParams(location.search).get('ph');
     if (ph) {
       const m = /^([^:/]+)(?::(\d+))?(\/.*)?$/.exec(ph);
@@ -29,6 +24,20 @@
     return opts;
   }
 
+  // 每個分頁固定的 token：iPad 斷線或重新整理後，可以立刻拿回同一個房號
+  function hostToken() {
+    try {
+      let t = sessionStorage.getItem('duoguitar.tok');
+      if (!t) {
+        t = Math.random().toString(36).slice(2) + Date.now().toString(36);
+        sessionStorage.setItem('duoguitar.tok', t);
+      }
+      return t;
+    } catch (e) {
+      return undefined; // 不能存就讓 PeerJS 自己產生
+    }
+  }
+
   class Link {
     // role: 'host'（iPad）或 'guest'（手機）
     constructor({ role, onMessage, onStatus, onOpen, onLatency }) {
@@ -38,9 +47,15 @@
       this.onOpen = onOpen || (() => {});
       this.onLatency = onLatency || (() => {});
       this.conn = null;
+      this.pending = null; // 手機：正在嘗試中的連線（同時只會有一個）
       this.peer = null;
       this.lastSeen = 0;
-      this.timers = [];
+      this.timers = new Set();
+      this.retryT = 0;
+      this.idRetryT = 0;
+      this.idWaitSince = 0;
+      this.fails = 0;
+      this.kicked = false;
       this.pingTimer = setInterval(() => this.tick(), 1500);
     }
 
@@ -53,29 +68,73 @@
       return !!(this.conn && this.conn.open);
     }
 
+    // 配對伺服器斷線時，用同一個 Peer 重連（保留 ID 與 token），間隔逐步拉長
+    watchSignal(peer) {
+      let delay = 1500;
+      peer.on('open', () => { delay = 1500; });
+      peer.on('disconnected', () => {
+        if (this.peer !== peer || peer.destroyed || this.idWait) return;
+        if (!this.connected) this.status('reconnecting', '配對伺服器斷線，重連中…');
+        this.later(() => {
+          if (this.peer === peer && !peer.destroyed && peer.disconnected) {
+            try { peer.reconnect(); } catch (e) { /* 正在連線中 */ }
+          }
+        }, delay);
+        delay = Math.min(delay * 1.6, 15000);
+      });
+    }
+
     // ---------- 主機（iPad） ----------
-    host(code) {
+    host(code, keepIdWait) {
       this.code = code;
       this.destroyPeer();
+      this.idWait = false;
+      if (!keepIdWait) this.idWaitSince = 0;
       this.status('starting', '建立房間中…');
-      const peer = new Peer(PREFIX + code, peerOptions());
+      const peer = new Peer(PREFIX + code, peerOptions({ token: hostToken() }));
       this.peer = peer;
+      this.watchSignal(peer);
       peer.on('open', () => {
+        this.idWaitSince = 0;
         if (!this.connected) this.status('waiting', '等待手機連線');
       });
       peer.on('connection', (conn) => this.attach(conn));
-      peer.on('disconnected', () => {
-        if (peer.destroyed) return;
-        if (!this.connected) this.status('reconnecting', '配對伺服器斷線，重連中…');
-        this.later(() => !peer.destroyed && peer.disconnected && peer.reconnect(), 1500);
-      });
+      // 用同一個 token 拿回還沒被清掉的房號時，PeerJS 伺服器不會再送 OPEN（peer.open 一直是 false），
+      // 但其實已經可以收連線了：沒有錯誤就當作在等手機
+      this.later(() => {
+        if (this.peer === peer && !peer.destroyed && !peer.open && !this.idWait && !this.connected && this.state === 'starting') {
+          this.idWaitSince = 0;
+          this.status('waiting', '等待手機連線');
+        }
+      }, 6000);
       peer.on('error', (err) => {
+        if (this.peer !== peer) return;
         if (err.type === 'unavailable-id') {
-          this.status('error', '房號被占用，換一個…');
-          this.onIdTaken && this.onIdTaken();
-        } else if (['network', 'server-error', 'socket-error', 'socket-closed'].includes(err.type)) {
+          // 通常是自己上一次的連線還沒被伺服器清掉：等它釋放，不要馬上換房號
+          this.idWait = true;
+          if (!this.idWaitSince) this.idWaitSince = performance.now();
+          const waited = performance.now() - this.idWaitSince;
+          if (waited > ID_WAIT_MS && !this.connected) {
+            this.idWaitSince = 0;
+            if (this.onIdTaken) this.onIdTaken();
+            return;
+          }
+          if (!this.connected) this.status('reconnecting', `房號 ${code} 還被舊連線占用，等待釋放…（${Math.round(waited / 1000)} 秒）`);
+          clearTimeout(this.idRetryT);
+          this.idRetryT = setTimeout(() => {
+            if (this.code !== code || this.peer !== peer) return;
+            if (!peer.destroyed && peer.disconnected) {
+              // 已經連過伺服器的 Peer（手機可能還連著）：同一個 Peer 重試，不要中斷演奏
+              this.idWait = false;
+              try { peer.reconnect(); } catch (e) { /* ignore */ }
+            } else {
+              this.host(code, true);
+            }
+          }, 5000);
+        } else if (NET_ERRORS.includes(err.type)) {
           if (!this.connected) this.status('error', '連不到配對伺服器（需要網路），重試中…');
-          this.later(() => this.code === code && (peer.destroyed || peer.disconnected) && this.host(code), 4000);
+          // 只有 Peer 已經被銷毀（從沒連上伺服器）才重建；已連上的手機不受影響
+          this.later(() => { if (this.peer === peer && peer.destroyed && this.code === code) this.host(code); }, 4000);
         } else {
           console.warn('peer error', err.type, err);
         }
@@ -85,68 +144,120 @@
     // ---------- 加入（手機） ----------
     join(code) {
       this.code = code;
+      this.kicked = false;
+      this.fails = 0;
       this.destroyPeer();
       this.status('starting', '連線中…');
+      this.guestPeer();
+    }
+
+    guestPeer() {
+      const code = this.code;
       const peer = new Peer(peerOptions());
       this.peer = peer;
+      this.watchSignal(peer);
       peer.on('open', () => this.connect());
-      peer.on('disconnected', () => {
-        if (!peer.destroyed) this.later(() => !peer.destroyed && peer.disconnected && peer.reconnect(), 1500);
-      });
       peer.on('error', (err) => {
+        if (this.peer !== peer) return;
         if (err.type === 'peer-unavailable') {
-          this.status('error', `找不到房號 ${code}，請確認 iPad 已開啟右手頁面`);
-          this.later(() => this.code === code && !this.connected && this.connect(), 2500);
-        } else if (['network', 'server-error', 'socket-error', 'socket-closed'].includes(err.type)) {
+          this.dropPending();
+          if (!this.connected) this.status('error', `找不到房號 ${code}，請確認 iPad 已開啟右手頁面`);
+          this.scheduleRetry(2500);
+        } else if (NET_ERRORS.includes(err.type)) {
           if (!this.connected) this.status('error', '連不到配對伺服器（需要網路），重試中…');
-          this.later(() => this.code === code && !this.connected && this.join(code), 4000);
+          this.later(() => {
+            if (this.peer === peer && peer.destroyed && this.code === code && !this.connected) this.guestPeer();
+          }, 4000);
         } else {
           console.warn('peer error', err.type, err);
         }
       });
     }
 
+    // 同一時間只有一個嘗試中的連線、一個重試計時器
     connect() {
-      if (!this.peer || this.peer.destroyed || this.connected) return;
-      if (this.peer.disconnected) {
-        this.peer.reconnect();
-        return;
-      }
-      this.status('connecting', `連線到房號 ${this.code}…`);
-      const conn = this.peer.connect(PREFIX + this.code, { reliable: true, serialization: 'json' });
+      const peer = this.peer;
+      if (!peer || peer.destroyed || this.connected || this.kicked || this.pending) return;
+      if (!peer.open) return; // 連上配對伺服器後（'open'）會再呼叫一次
+      this.status('connecting', this.fails >= 2
+        ? '還連不上：請確認兩台在同一個 Wi-Fi，且路由器沒有開「AP 隔離」'
+        : `連線到房號 ${this.code}…`);
+      const conn = peer.connect(PREFIX + this.code, { reliable: true, serialization: 'json' });
+      this.pending = conn;
       this.attach(conn);
-      const code = this.code;
-      this.later(() => {
-        if (this.code === code && !conn.open) {
-          try { conn.close(); } catch (e) { /* ignore */ }
-          if (!this.connected) this.connect();
-        }
-      }, 9000);
+      this.scheduleRetry(9000, true);
+    }
+
+    scheduleRetry(ms, watchdog) {
+      clearTimeout(this.retryT);
+      this.retryT = setTimeout(() => {
+        this.retryT = 0;
+        if (this.connected || this.kicked) return;
+        if (watchdog && this.pending) this.fails++; // iPad 在，但 P2P 打不通
+        this.dropPending();
+        this.connect();
+      }, ms);
+    }
+
+    dropPending() {
+      const c = this.pending;
+      this.pending = null;
+      if (c) {
+        try { c.close(); } catch (e) { /* ignore */ }
+      }
     }
 
     attach(conn) {
       conn.on('open', () => {
-        if (this.conn && this.conn !== conn) {
-          try { this.conn.close(); } catch (e) { /* ignore */ }
+        if (this.pending === conn) {
+          this.pending = null;
+          clearTimeout(this.retryT);
+          this.retryT = 0;
         }
+        const old = this.conn;
         this.conn = conn;
+        this.fails = 0;
+        if (old && old !== conn) {
+          // 新的手機接手：先告訴舊的手機，讓它不要自動搶回來
+          try { old.send({ t: 'bye' }); } catch (e) { /* ignore */ }
+          setTimeout(() => { try { old.close(); } catch (e) { /* ignore */ } }, 300);
+        }
         this.lastSeen = performance.now();
         this.status('connected', '已連線');
         this.onOpen();
       });
       conn.on('data', (d) => {
+        if (conn !== this.conn) return;
         this.lastSeen = performance.now();
         if (!d || typeof d !== 'object') return;
         if (d.t === 'ping') this.send({ t: 'pong', ts: d.ts });
-        else if (d.t === 'pong') this.onLatency((performance.now() - d.ts) / 2);
-        else this.onMessage(d);
+        else if (d.t === 'pong') {
+          if (typeof d.ts === 'number') this.onLatency((performance.now() - d.ts) / 2);
+        } else if (d.t === 'bye') {
+          this.kicked = true;
+          this.conn = null;
+          try { conn.close(); } catch (e) { /* ignore */ }
+          this.status('error', '另一支手機已接手。按「連」可以再連回來');
+        } else {
+          try { this.onMessage(d); } catch (e) { console.warn('bad message', d, e); }
+        }
       });
       const closed = () => {
+        if (this.pending === conn) {
+          // 嘗試失敗（例如 ICE 協商失敗）：稍後重試
+          this.pending = null;
+          if (this.role === 'guest' && !this.kicked) {
+            this.fails++;
+            this.scheduleRetry(2000);
+          }
+          return;
+        }
         if (this.conn !== conn) return;
         this.conn = null;
         if (this.role === 'guest') {
+          if (this.kicked) return;
           this.status('error', '連線中斷，重新連線…');
-          this.later(() => this.connect(), 1200);
+          this.scheduleRetry(1200);
         } else {
           this.status('waiting', '手機已斷線，等待重新連線');
         }
@@ -165,8 +276,10 @@
       if (silent > 6000 && this.state === 'connected') this.status('unstable', '連線不穩…');
       else if (silent < 6000 && this.state === 'unstable') this.status('connected', '已連線');
       if (silent > 12000 && this.role === 'guest') {
-        try { this.conn.close(); } catch (e) { /* ignore */ }
-        this.conn = null;
+        const c = this.conn;
+        this.conn = null; // 先拿掉，close 事件就不會再排一次重連
+        try { c.close(); } catch (e) { /* ignore */ }
+        this.status('error', '連線逾時，重新連線…');
         this.connect();
       }
     }
@@ -178,41 +291,106 @@
     }
 
     later(fn, ms) {
-      this.timers.push(setTimeout(fn, ms));
+      const id = setTimeout(() => {
+        this.timers.delete(id);
+        fn();
+      }, ms);
+      this.timers.add(id);
+      return id;
     }
 
     destroyPeer() {
       this.timers.forEach(clearTimeout);
-      this.timers = [];
-      if (this.conn) {
-        try { this.conn.close(); } catch (e) { /* ignore */ }
+      this.timers.clear();
+      clearTimeout(this.retryT);
+      clearTimeout(this.idRetryT);
+      this.retryT = this.idRetryT = 0;
+      const old = [this.conn, this.pending];
+      this.conn = this.pending = null;
+      for (const c of old) {
+        if (c) {
+          try { c.close(); } catch (e) { /* ignore */ }
+        }
       }
-      this.conn = null;
       if (this.peer) {
-        try { this.peer.destroy(); } catch (e) { /* ignore */ }
+        const p = this.peer;
+        this.peer = null;
+        try { p.destroy(); } catch (e) { /* ignore */ }
       }
-      this.peer = null;
     }
   }
 
-  // 螢幕不要自動變暗（iOS 16.4+）
+  // ---------- 螢幕常亮 ----------
+  // iOS 16.4+ 用 Wake Lock；更舊的版本，或「加入主畫面」模式在 iOS 18.4 以前（Wake Lock 無效）
+  // 改用 NoSleep.js 的做法：播放一段有靜音音軌的小影片
   let wakeLock = null;
-  async function keepAwake() {
-    try {
-      if ('wakeLock' in navigator && !wakeLock) {
-        wakeLock = await navigator.wakeLock.request('screen');
-        wakeLock.addEventListener('release', () => { wakeLock = null; });
-      }
-    } catch (e) { /* 不支援就算了 */ }
+  let video = null;
+  function iosVersion() {
+    const m = /(?:iPhone|iPad|iPod)[^)]* OS (\d+)_(\d+)/.exec(navigator.userAgent);
+    return m ? Number(m[1]) * 100 + Number(m[2]) : null;
   }
+  function useVideo() {
+    if (!('wakeLock' in navigator)) return true;
+    if (navigator.standalone) {
+      const v = iosVersion();
+      return v === null || v < 1804;
+    }
+    return false;
+  }
+  function isAwake() {
+    return useVideo() ? !!(video && !video.paused) : !!wakeLock;
+  }
+  function startVideo() {
+    const media = window.NOSLEEP_MEDIA;
+    if (!media) return;
+    if (!video) {
+      video = document.createElement('video');
+      video.setAttribute('playsinline', '');
+      video.setAttribute('title', '螢幕常亮');
+      for (const [type, src] of [['webm', media.webm], ['mp4', media.mp4]]) {
+        const s = document.createElement('source');
+        s.src = src;
+        s.type = 'video/' + type;
+        video.appendChild(s);
+      }
+      video.addEventListener('loadedmetadata', () => {
+        if (video.duration <= 1) video.loop = true;
+        else video.addEventListener('timeupdate', () => { if (video.currentTime > 0.5) video.currentTime = Math.random(); });
+      });
+    }
+    const p = video.play();
+    if (p && p.catch) p.catch(() => {});
+  }
+  async function keepAwake() {
+    if (isAwake()) return;
+    if (useVideo()) {
+      startVideo();
+      return;
+    }
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } catch (e) { /* 需要使用者操作；下次點擊再試 */ }
+  }
+  let wantAwake = false;
+  function requestAwake() {
+    wantAwake = true;
+    keepAwake();
+  }
+  // click / touchend 才算「使用者操作」，拿到之前每次都再試一次
+  ['click', 'touchend'].forEach((t) => document.addEventListener(t, () => {
+    if (wantAwake && !isAwake()) keepAwake();
+  }, { capture: true, passive: true }));
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') keepAwake();
+    if (document.visibilityState === 'visible') {
+      if (wantAwake) keepAwake();
+    } else if (video) video.pause();
   });
 
-  // 禁止 iOS 縮放、雙擊放大、長按選單
+  // 禁止 iOS 縮放、雙擊放大、長按選單（.scroll 和頂部工具列仍可捲動）
   function lockGestures() {
     ['gesturestart', 'gesturechange', 'gestureend'].forEach((t) => document.addEventListener(t, (e) => e.preventDefault()));
-    document.addEventListener('touchmove', (e) => { if (!e.target.closest('.scroll')) e.preventDefault(); }, { passive: false });
+    document.addEventListener('touchmove', (e) => { if (!e.target.closest('.scroll, .bar')) e.preventDefault(); }, { passive: false });
     document.addEventListener('contextmenu', (e) => e.preventDefault());
     let last = 0;
     document.addEventListener('touchend', (e) => {
@@ -230,5 +408,5 @@
     return val;
   }
 
-  G.Net = { Link, PREFIX, keepAwake, lockGestures, store };
+  G.Net = { Link, PREFIX, keepAwake: requestAwake, lockGestures, store };
 })(window);
