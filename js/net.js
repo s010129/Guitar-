@@ -116,6 +116,15 @@
         }
       };
       check();
+      if (this.role === 'guest' && !peer.id) {
+        // ID 到了 PeerJS 才開 WebSocket：從那一刻重新計 7 秒，免得剛開始握手就被檢查中斷
+        const init = peer._initialize;
+        peer._initialize = (id) => {
+          peer._initialize = init;
+          init.call(peer, id);
+          if (this.peer === peer && !peer.destroyed) check();
+        };
+      }
       peer.on('open', () => { delay = 1500; });
       peer.on('disconnected', () => {
         if (this.peer !== peer || peer.destroyed || this.idWait) return;
