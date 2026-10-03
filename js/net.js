@@ -40,6 +40,11 @@
     }
   }
   const wsOpen = (peer) => !!(peer && peer.socket && peer.socket._wsOpen && peer.socket._wsOpen());
+  // 丟棄一個 Peer：晚到的 ID 回應不可以再開一條沒人管的 WebSocket
+  function retire(peer) {
+    peer._initialize = () => {};
+    try { peer.destroy(); } catch (e) { /* ignore */ }
+  }
   const KICKED_MSG = '另一支手機已接手。按「連」可以再連回來';
 
   class Link {
@@ -79,9 +84,15 @@
     // 配對伺服器斷線時，用同一個 Peer 重連（保留 ID 與 token），間隔逐步拉長
     watchSignal(peer) {
       let delay = 1500;
+      let gen = 0;
+      let idWaits = 0;
       // 連線 / 重連後檢查：伺服器用同一個 token 接回舊連線時不會送 OPEN（peer.open 一直是 false，但其實能用）；
-      // 若 WebSocket 卡在連線中（防火牆、伺服器沒回應）就強制重試
-      const check = () => this.later(() => {
+      // 若 WebSocket 卡在連線中（防火牆、伺服器沒回應）就強制重試。只有最新一次的檢查有效。
+      const check = () => {
+        const g = ++gen;
+        this.later(() => { if (g === gen) checkNow(); }, 7000);
+      };
+      const checkNow = () => {
         if (this.peer !== peer || peer.destroyed || peer.disconnected || peer.open) return;
         if (wsOpen(peer) && peer.id) {
           delay = 1500;
@@ -94,11 +105,16 @@
         } else if (peer.id) {
           try { peer.disconnect(); } catch (e) { /* ignore */ } // 觸發 'disconnected' → 重連
         } else if (this.role === 'guest') {
-          this.peer = null; // 連 ID 都還沒拿到：整個重來
-          try { peer.destroy(); } catch (e) { /* ignore */ }
+          // 還在等伺服器配發 ID：網路慢就多等一下（約 28 秒）才整個重來
+          if (++idWaits < 4) {
+            check();
+            return;
+          }
+          this.peer = null;
+          retire(peer);
           this.guestPeer();
         }
-      }, 7000);
+      };
       check();
       peer.on('open', () => { delay = 1500; });
       peer.on('disconnected', () => {
@@ -347,7 +363,7 @@
       if (this.peer) {
         const p = this.peer;
         this.peer = null;
-        try { p.destroy(); } catch (e) { /* ignore */ }
+        retire(p);
       }
     }
   }

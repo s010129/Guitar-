@@ -16,14 +16,16 @@
   <style>
     .chordbar { flex: none; display: flex; gap: 8px; padding: 8px 10px; background: #15110d; border-top: 1px solid var(--line); overflow-x: auto; }
     .chordbar .pad { flex: 1 1 0; min-width: 0; height: 74px; }
-    @media (max-width: 760px) { .chordbar .pad svg { display: none; } .chordbar .pad { height: 54px; } }
-    @media (max-width: 640px) {
+    .chordbar .pad .nm { font-size: min(24px, 2.3vw); } /* 一排 8 個時，Cmaj7 這種長名字也放得下 */
+    .chordbar select { flex: none; align-self: center; }
+    /* 窄螢幕（直放 iPad mini、分割畫面）：每排 4 個，選單獨立一排 */
+    @media (max-width: 820px) {
       .chordbar { flex-wrap: wrap; gap: 6px; padding: 6px 8px; }
-      .chordbar .pad { flex: 1 0 calc(25% - 6px); height: 44px; }
-      .chordbar .pad .nm { font-size: 20px; }
+      .chordbar .pad { flex: 1 0 calc(25% - 6px); height: 46px; }
+      .chordbar .pad svg { display: none; }
+      .chordbar .pad .nm { font-size: min(20px, 5vw); }
       .chordbar select { flex: 1 0 100%; }
     }
-    .chordbar select { flex: none; align-self: center; }
     #qrBox { display: flex; justify-content: center; margin: 6px 0 12px; }
     #qrBox svg, #qrBox img { width: 220px; height: 220px; background: #fff; border-radius: 10px; padding: 8px; }
     .bigcode { text-align: center; font-size: 54px; font-weight: 900; letter-spacing: 10px; color: var(--accent2); font-variant-numeric: tabular-nums; }

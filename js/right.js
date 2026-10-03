@@ -712,7 +712,7 @@
       if (p.armed[s]) continue;
       const d = y - geo.ys[s];
       const ok = s === p.tapS
-        ? Math.abs(d) > geo.tapTol || (Math.sign(d) !== p.tapSide && Math.abs(d) > geo.hyst) // 已經越過這條弦
+        ? Math.abs(d) > geo.tapTol || (Math.sign(d) !== p.tapSide && Math.abs(d) > Math.max(geo.hyst, geo.tapTol * 0.6)) // 已經明顯越過這條弦（手指滾動不算）
         : Math.abs(d) > geo.hyst;
       if (ok) {
         p.armed[s] = true;
