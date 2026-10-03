@@ -77,6 +77,15 @@
 
   function onMessage(d) {
     if (d.t === 'hello') sendCfg();
+    else if (d.t === 'stage') {
+      // 手機切換演奏模式：iPad 跟著切（兩邊是同一把吉他）
+      if (!!d.on !== !!settings.stage) {
+        settings.stage = !!d.on;
+        store('r.settings', settings);
+        applyStage();
+        UI.toast(settings.stage ? '演奏模式（面向觀眾）' : '放桌上模式');
+      }
+    }
     else if (d.t === 'L') {
       if (!Array.isArray(d.f) || d.f.length !== nStr()) {
         sendCfg();
@@ -93,7 +102,7 @@
 
   function sendCfg() {
     const t = tuningObj();
-    link.send({ t: 'cfg', inst: st.inst, name: inst().name, n: nStr(), tuning: t.notes, tuneId: t.id, tuneName: t.name, capo: st.capo });
+    link.send({ t: 'cfg', inst: st.inst, name: inst().name, n: nStr(), tuning: t.notes, tuneId: t.id, tuneName: t.name, capo: st.capo, stage: !!settings.stage });
   }
 
   // ---------------- 左手狀態 → 聲音 ----------------
@@ -938,6 +947,7 @@
     appEl.classList.remove('showbar');
     $('stageMode').checked = !!settings.stage;
     layout();
+    sendCfg(); // 手機跟著翻轉
   }
   $('barToggle').addEventListener('click', () => appEl.classList.toggle('showbar'));
   UI.setupFullscreenButton($('fsBtn'), () => UI.toast('這個瀏覽器不支援網頁全螢幕：用 Safari「分享 → 加入主畫面」，從主畫面打開就是全螢幕', 4500));

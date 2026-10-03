@@ -6,7 +6,9 @@
   const store = Net.store;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
-  const settings = Object.assign({ frets: 0, flip: false, lefty: false, names: true, pullRing: false }, store('l.settings') || {});
+  const settings = Object.assign({ frets: 0, flip: false, lefty: false, names: true, pullRing: false, perform: false }, store('l.settings') || {});
+  // 指板左右翻轉（琴頭在右）：演奏模式面向觀眾時翻轉；左撇子再反過來
+  const mirrored = () => !!settings.lefty !== !!settings.perform;
   const cfg = Object.assign({ inst: 'acoustic', name: '木吉他（鋼弦）', n: 6, tuning: [40, 45, 50, 55, 59, 64], tuneId: 'std', tuneName: '標準 EADGBE', capo: 0 }, store('l.cfg') || {});
   const st = {
     mode: store('l.mode') === 'chord' ? 'chord' : 'fret',
@@ -64,6 +66,11 @@
     const changed = d.n !== cfg.n;
     Object.assign(cfg, { inst: d.inst, name: d.name, n: d.n, tuning: d.tuning, tuneId: d.tuneId, tuneName: d.tuneName, capo: d.capo || 0 });
     store('l.cfg', cfg);
+    // 跟著 iPad 的演奏模式（抱吉他、面向觀眾）一起左右翻轉
+    if (typeof d.stage === 'boolean' && d.stage !== !!settings.perform) {
+      setPerform(d.stage, false);
+      UI.toast(d.stage ? 'iPad 切到演奏模式：指板也左右翻轉了' : 'iPad 切回放桌上：指板翻回來了', 2500);
+    }
     if (changed) {
       st.muted = new Array(cfg.n).fill(false);
       // 清掉觸控前，先放開它們按住的「悶音」，否則之後放手也解除不了
@@ -143,19 +150,24 @@
     const rowH = Lv / n;
     g = { portrait, Lu, Lv, labelW, muteW, count, edges, n, rowH, fretEnd: Lu - muteW };
     $('posLbl').textContent = `${st.start}–${st.start + count - 1}`;
+    // 指板翻轉時，往琴頭的箭頭也要指向右邊
+    const m = mirrored();
+    $('posBox').classList.toggle('rev', m);
+    $('posL').textContent = m ? '▶' : '◀';
+    $('posR').textContent = m ? '◀' : '▶';
     dirty = true;
   }
 
   // u = 沿著弦的方向（琴頭→琴身），v = 橫跨弦的方向
   function toUV(x, y) {
     let u, v;
-    if (g.portrait) { u = y; v = x; if (settings.lefty) v = g.Lv - v; }
-    else { u = x; v = y; if (settings.lefty) u = g.Lu - u; }
+    if (g.portrait) { u = y; v = x; if (mirrored()) v = g.Lv - v; }
+    else { u = x; v = y; if (mirrored()) u = g.Lu - u; }
     return { u, v };
   }
   function toXY(u, v) {
-    if (g.portrait) return { x: settings.lefty ? g.Lv - v : v, y: u };
-    return { x: settings.lefty ? g.Lu - u : u, y: v };
+    if (g.portrait) return { x: mirrored() ? g.Lv - v : v, y: u };
+    return { x: mirrored() ? g.Lu - u : u, y: v };
   }
   const rowOf = (s) => (settings.flip ? g.n - 1 - s : s);
   const stringAtV = (v) => {
@@ -541,6 +553,18 @@
     store('l.settings', settings);
     layout();
   });
+  // 演奏模式：手機和 iPad 同步
+  function setPerform(on, tellIpad) {
+    settings.perform = !!on;
+    store('l.settings', settings);
+    $('perform').checked = settings.perform;
+    ptrs.clear();
+    layout();
+    if (tellIpad) link.send({ t: 'stage', on: settings.perform });
+  }
+  $('perform').checked = !!settings.perform;
+  $('perform').addEventListener('change', () => setPerform($('perform').checked, true));
+
   for (const key of ['flip', 'lefty', 'names', 'pullRing']) {
     const el = $(key);
     el.checked = !!settings[key];
