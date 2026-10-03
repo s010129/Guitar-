@@ -25,18 +25,22 @@
   }
 
   // 每個分頁固定的 token：iPad 斷線或重新整理後，可以立刻拿回同一個房號
+  const newToken = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+  let memToken = null;
   function hostToken() {
     try {
       let t = sessionStorage.getItem('duoguitar.tok');
       if (!t) {
-        t = Math.random().toString(36).slice(2) + Date.now().toString(36);
+        t = newToken();
         sessionStorage.setItem('duoguitar.tok', t);
       }
       return t;
     } catch (e) {
-      return undefined; // 不能存就讓 PeerJS 自己產生
+      return memToken || (memToken = newToken()); // 無法儲存（封鎖 Cookie）：至少同一頁內固定
     }
   }
+  const wsOpen = (peer) => !!(peer && peer.socket && peer.socket._wsOpen && peer.socket._wsOpen());
+  const KICKED_MSG = '另一支手機已接手。按「連」可以再連回來';
 
   class Link {
     // role: 'host'（iPad）或 'guest'（手機）
@@ -60,6 +64,10 @@
     }
 
     status(state, text) {
+      if (this.kicked && state !== 'connected') {
+        state = 'error'; // 被接手的手機不會自己重連，保留說明
+        text = KICKED_MSG;
+      }
       this.state = state;
       this.onStatus(state, text);
     }
@@ -71,6 +79,27 @@
     // 配對伺服器斷線時，用同一個 Peer 重連（保留 ID 與 token），間隔逐步拉長
     watchSignal(peer) {
       let delay = 1500;
+      // 連線 / 重連後檢查：伺服器用同一個 token 接回舊連線時不會送 OPEN（peer.open 一直是 false，但其實能用）；
+      // 若 WebSocket 卡在連線中（防火牆、伺服器沒回應）就強制重試
+      const check = () => this.later(() => {
+        if (this.peer !== peer || peer.destroyed || peer.disconnected || peer.open) return;
+        if (wsOpen(peer) && peer.id) {
+          delay = 1500;
+          if (this.role === 'host') {
+            this.idWaitSince = 0;
+            if (!this.connected && (this.state === 'starting' || this.state === 'reconnecting')) this.status('waiting', '等待手機連線');
+          } else {
+            this.connect();
+          }
+        } else if (peer.id) {
+          try { peer.disconnect(); } catch (e) { /* ignore */ } // 觸發 'disconnected' → 重連
+        } else if (this.role === 'guest') {
+          this.peer = null; // 連 ID 都還沒拿到：整個重來
+          try { peer.destroy(); } catch (e) { /* ignore */ }
+          this.guestPeer();
+        }
+      }, 7000);
+      check();
       peer.on('open', () => { delay = 1500; });
       peer.on('disconnected', () => {
         if (this.peer !== peer || peer.destroyed || this.idWait) return;
@@ -78,6 +107,7 @@
         this.later(() => {
           if (this.peer === peer && !peer.destroyed && peer.disconnected) {
             try { peer.reconnect(); } catch (e) { /* 正在連線中 */ }
+            check();
           }
         }, delay);
         delay = Math.min(delay * 1.6, 15000);
@@ -99,14 +129,6 @@
         if (!this.connected) this.status('waiting', '等待手機連線');
       });
       peer.on('connection', (conn) => this.attach(conn));
-      // 用同一個 token 拿回還沒被清掉的房號時，PeerJS 伺服器不會再送 OPEN（peer.open 一直是 false），
-      // 但其實已經可以收連線了：沒有錯誤就當作在等手機
-      this.later(() => {
-        if (this.peer === peer && !peer.destroyed && !peer.open && !this.idWait && !this.connected && this.state === 'starting') {
-          this.idWaitSince = 0;
-          this.status('waiting', '等待手機連線');
-        }
-      }, 6000);
       peer.on('error', (err) => {
         if (this.peer !== peer) return;
         if (err.type === 'unavailable-id') {
@@ -178,7 +200,11 @@
     connect() {
       const peer = this.peer;
       if (!peer || peer.destroyed || this.connected || this.kicked || this.pending) return;
-      if (!peer.open) return; // 連上配對伺服器後（'open'）會再呼叫一次
+      // 配對伺服器還不能用就稍後再試（不看 peer.open：伺服器接回舊連線時不會送 OPEN）
+      if (peer.disconnected || !peer.id || !wsOpen(peer)) {
+        this.scheduleRetry(3000);
+        return;
+      }
       this.status('connecting', this.fails >= 2
         ? '還連不上：請確認兩台在同一個 Wi-Fi，且路由器沒有開「AP 隔離」'
         : `連線到房號 ${this.code}…`);
@@ -237,7 +263,7 @@
           this.kicked = true;
           this.conn = null;
           try { conn.close(); } catch (e) { /* ignore */ }
-          this.status('error', '另一支手機已接手。按「連」可以再連回來');
+          this.status('error', KICKED_MSG);
         } else {
           try { this.onMessage(d); } catch (e) { console.warn('bad message', d, e); }
         }
@@ -281,6 +307,12 @@
         try { c.close(); } catch (e) { /* ignore */ }
         this.status('error', '連線逾時，重新連線…');
         this.connect();
+      } else if (silent > 15000 && this.role === 'host') {
+        // 手機每 1.5 秒會 ping：15 秒沒消息就當作離開了（鎖屏、走出 Wi-Fi），不用等瀏覽器很久才發現
+        const c = this.conn;
+        this.conn = null;
+        try { c.close(); } catch (e) { /* ignore */ }
+        this.status('waiting', '手機已斷線，等待重新連線');
       }
     }
 

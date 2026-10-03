@@ -47,6 +47,19 @@
     return b;
   }
 
+  // 0.85 以下完全線性，以上用 tanh 平滑地壓到 0.98 以內
+  function softClipCurve() {
+    const n = 4097;
+    const c = new Float32Array(n);
+    const T = 0.85, R = 0.13;
+    for (let i = 0; i < n; i++) {
+      const v = ((i / (n - 1)) * 2 - 1) * 2;
+      const a = Math.abs(v);
+      c[i] = a <= T ? v : Math.sign(v) * (T + R * Math.tanh((a - T) / R));
+    }
+    return c;
+  }
+
   function shaperCurve(k) {
     const n = 2048;
     const c = new Float32Array(n);
@@ -96,14 +109,14 @@
       comp.ratio.value = 4;
       comp.attack.value = 0.003;
       comp.release.value = 0.2;
-      // 限幅器：音量開大、用力刷時也不會破音（削波）
-      const lim = ctx.createDynamicsCompressor();
-      lim.threshold.value = -3;
-      lim.knee.value = 0;
-      lim.ratio.value = 20;
-      lim.attack.value = 0.001;
-      lim.release.value = 0.08;
-      this.master.connect(comp).connect(lim).connect(ctx.destination);
+      // 軟削波限幅：音量開大、用力刷時也不會超過 0dBFS。
+      // 用 WaveShaper 而不用第二個 DynamicsCompressor，因為壓縮器固定會多 6ms 延遲
+      const pre = ctx.createGain();
+      pre.gain.value = 0.5; // 曲線的輸入範圍 [-1,1] 代表實際的 [-2,2]
+      const lim = ctx.createWaveShaper();
+      lim.curve = softClipCurve();
+      lim.oversample = 'none';
+      this.master.connect(comp).connect(pre).connect(lim).connect(ctx.destination);
       this.limiter = lim;
 
       this.reverb = ctx.createConvolver();
@@ -183,6 +196,11 @@
 
     resume() {
       if (this.ctx && this.ctx.state !== 'running') this.ctx.resume().catch(() => {});
+      // 來電、Siri 等中斷會暫停無聲音檔：下一次觸控時接著播，維持「播放」類別
+      if (this.silentEl && this.silentEl.paused && document.visibilityState === 'visible') {
+        const p = this.silentEl.play();
+        if (p && p.catch) p.catch(() => {});
+      }
     }
 
     setVolume(v) {

@@ -16,7 +16,13 @@
   <style>
     .chordbar { flex: none; display: flex; gap: 8px; padding: 8px 10px; background: #15110d; border-top: 1px solid var(--line); overflow-x: auto; }
     .chordbar .pad { flex: 1 1 0; min-width: 0; height: 74px; }
-    @media (max-width: 640px) { .chordbar .pad svg { display: none; } .chordbar .pad { height: 54px; } }
+    @media (max-width: 760px) { .chordbar .pad svg { display: none; } .chordbar .pad { height: 54px; } }
+    @media (max-width: 640px) {
+      .chordbar { flex-wrap: wrap; gap: 6px; padding: 6px 8px; }
+      .chordbar .pad { flex: 1 0 calc(25% - 6px); height: 44px; }
+      .chordbar .pad .nm { font-size: 20px; }
+      .chordbar select { flex: 1 0 100%; }
+    }
     .chordbar select { flex: none; align-self: center; }
     #qrBox { display: flex; justify-content: center; margin: 6px 0 12px; }
     #qrBox svg, #qrBox img { width: 220px; height: 220px; background: #fff; border-radius: 10px; padding: 8px; }

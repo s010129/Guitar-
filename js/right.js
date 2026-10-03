@@ -644,7 +644,8 @@
       if (bd <= geo.tapTol) {
         pluck(best, clamp(0.62 * Math.pow(settings.sens, 0.3), 0.3, 0.9), x, 0);
         p.armed[best] = false;
-        p.tapS = best; // 手指離開這條弦夠遠之前不再觸發，避免刷弦開頭重複彈
+        p.tapS = best; // 手指越過這條弦、或離開夠遠之前不再觸發，避免刷弦開頭重複彈
+        p.tapSide = Math.sign(y - geo.ys[best]);
       }
       return;
     }
@@ -653,6 +654,7 @@
     if (x <= geo.strumEnd && gapY < geo.spacing * 2.5) {
       p.knockDir = y < geo.top ? 1 : -1;
       p.y0 = y;
+      p.downT = e.timeStamp;
       p.knockArgs = [x, y, { width: e.width }];
       p.knockT = setTimeout(() => fireKnock(p), KNOCK_HOLD_MS);
     } else {
@@ -675,8 +677,9 @@
     const t = e.timeStamp;
     if (p.kind === 'palm') return;
     if (p.knockT && (y - p.y0) * p.knockDir > 5) {
-      clearTimeout(p.knockT); // 是刷弦，不是敲琴身
+      clearTimeout(p.knockT); // 可能是刷弦：先不敲；如果最後只是手指稍微滑動的點擊，放開時再敲
       p.knockT = 0;
+      p.knockDeferred = true;
     }
     const dt = Math.max(1, t - p.t);
     const dy = y - p.y;
@@ -702,12 +705,16 @@
           pluck(h.s, vel, h.x, (h.f - f0) * span);
           p.armed[h.s] = false;
         }
+        p.knockDeferred = false; // 真的刷到弦了，不是敲琴身
       }
     }
     for (let s = 0; s < geo.n; s++) {
       if (p.armed[s]) continue;
-      const th = s === p.tapS ? geo.tapTol : geo.hyst;
-      if (Math.abs(y - geo.ys[s]) > th) {
+      const d = y - geo.ys[s];
+      const ok = s === p.tapS
+        ? Math.abs(d) > geo.tapTol || (Math.sign(d) !== p.tapSide && Math.abs(d) > geo.hyst) // 已經越過這條弦
+        : Math.abs(d) > geo.hyst;
+      if (ok) {
         p.armed[s] = true;
         if (s === p.tapS) p.tapS = -1;
       }
@@ -722,6 +729,10 @@
     if (!p) return;
     ptrs.delete(e.pointerId);
     fireKnock(p); // 很快的點擊：馬上敲
+    if (p.knockDeferred && e.timeStamp - p.downT < 150 && (p.y - p.y0) * p.knockDir < geo.tapTol) {
+      p.knockDeferred = false;
+      knockAt(...p.knockArgs); // 手指落下時稍微滑動的點擊，仍然算敲琴身
+    }
     if (p.kind === 'palm') {
       palmCount = Math.max(0, palmCount - 1);
       dirty = true;
