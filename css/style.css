@@ -12,6 +12,28 @@
   --bad: #ff5d5d;
   --radius: 12px;
   --bar-h: 46px;
+  /* 安全區域（瀏海、Home 指示條）；整頁旋轉時要換邊 */
+  --sat: env(safe-area-inset-top);
+  --sar: env(safe-area-inset-right);
+  --sab: env(safe-area-inset-bottom);
+  --sal: env(safe-area-inset-left);
+}
+
+/* 裝置直放時整頁順時針轉 90°，畫面永遠是橫的（由 UI.forceLandscape 加上 .rot） */
+html.rot {
+  --sat: env(safe-area-inset-right);
+  --sar: env(safe-area-inset-bottom);
+  --sab: env(safe-area-inset-left);
+  --sal: env(safe-area-inset-top);
+}
+html.rot body {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: var(--vh);
+  height: var(--vw);
+  transform-origin: 0 0;
+  transform: translateX(var(--vw)) rotate(90deg);
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -50,7 +72,7 @@ input { -webkit-user-select: text; user-select: text; }
   inset: 0;
   display: flex;
   flex-direction: column;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  padding: var(--sat) var(--sar) var(--sab) var(--sal);
 }
 
 .bar {
@@ -149,7 +171,7 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
 .toast {
   position: fixed;
   left: 50%;
-  top: calc(var(--bar-h) + 12px + env(safe-area-inset-top));
+  top: calc(var(--bar-h) + 12px + var(--sat));
   transform: translateX(-50%);
   background: rgba(30, 24, 18, 0.95);
   border: 1px solid var(--line);
@@ -202,3 +224,33 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
   text-align: center;
   font-size: 18px;
 }
+
+/* iPad 演奏模式（面向觀眾）：工具列收起來，從左上角的按鈕叫出來 */
+.app.perform .bar {
+  position: absolute;
+  top: var(--sat);
+  left: var(--sal);
+  right: var(--sar);
+  z-index: 30;
+  transform: translateY(calc(-100% - var(--sat) - 8px));
+  transition: transform 0.2s ease;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+.app.perform.showbar .bar { transform: none; }
+.bar-toggle {
+  display: none;
+  position: absolute;
+  top: calc(var(--sat) + 8px);
+  left: calc(var(--sal) + 8px);
+  z-index: 31;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  align-items: center;
+  justify-content: center;
+}
+.app.perform .bar-toggle { display: flex; }
+.app.perform.showbar .bar-toggle { top: calc(var(--sat) + var(--bar-h) + 8px); }

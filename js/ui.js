@@ -49,5 +49,93 @@
     dot.className = 'dot' + (state === 'connected' ? ' ok' : state === 'error' ? '' : ' wait');
   }
 
-  G.UI = { toast, chordSVG, statusDot };
+  // ---------- 永遠橫向 ----------
+  // iOS 網頁不能鎖定方向：「裝置」直放時把整頁順時針轉 90°（畫面頂端朝向裝置右側）。
+  // 用裝置方向判斷，不用視窗比例：iPad 分割畫面時視窗可能是直的，但 iPad 本身是橫的，不能轉。
+  let rotated = false;
+  function devicePortrait() {
+    const so = screen.orientation;
+    if (so && typeof so.type === 'string') return so.type.indexOf('portrait') === 0;
+    if (typeof window.orientation === 'number') return window.orientation === 0 || window.orientation === 180;
+    return window.innerHeight > window.innerWidth;
+  }
+  function applyOrientation() {
+    const root = document.documentElement;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    rotated = devicePortrait() && h > w;
+    root.classList.toggle('rot', rotated);
+    root.style.setProperty('--vw', w + 'px');
+    root.style.setProperty('--vh', h + 'px');
+  }
+  function forceLandscape() {
+    applyOrientation();
+    window.addEventListener('resize', applyOrientation);
+    window.addEventListener('orientationchange', () => setTimeout(applyOrientation, 60));
+    if (screen.orientation && screen.orientation.addEventListener) screen.orientation.addEventListener('change', applyOrientation);
+  }
+  // 觸控點 → 元素內的座標（考慮整頁旋轉）
+  function localPoint(el, e) {
+    const r = el.getBoundingClientRect();
+    if (!rotated) return { x: e.clientX - r.left, y: e.clientY - r.top };
+    // 轉了 90°：元素的 x 軸朝螢幕下方、y 軸朝螢幕左方，原點在外框右上角
+    return { x: e.clientY - r.top, y: r.right - e.clientX };
+  }
+
+  // ---------- 全螢幕 ----------
+  const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement || null;
+  function fsSupported() {
+    const d = document.documentElement;
+    return !!(d.requestFullscreen || d.webkitRequestFullscreen) && !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+  }
+  function standalone() {
+    return navigator.standalone === true || window.matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches;
+  }
+  // 必須在點擊當下呼叫；不支援（iPhone 的 Safari）時回傳 false
+  function enterFullscreen() {
+    if (fsElement()) return true;
+    if (!fsSupported()) return false;
+    const d = document.documentElement;
+    const lock = () => {
+      try {
+        const q = screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape');
+        if (q && q.catch) q.catch(() => {});
+      } catch (e) { /* iOS 不支援鎖定方向 */ }
+    };
+    try {
+      const p = d.requestFullscreen ? d.requestFullscreen({ navigationUI: 'hide' }) : d.webkitRequestFullscreen();
+      if (p && p.then) p.then(lock).catch(() => {});
+      else lock();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+  function exitFullscreen() {
+    try {
+      const p = (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      if (p && p.catch) p.catch(() => {});
+    } catch (e) { /* ignore */ }
+  }
+  // 全螢幕按鈕：已經是主畫面 App 就藏起來；按了切換；不支援就說明怎麼「加入主畫面」
+  function setupFullscreenButton(btn, onUnsupported) {
+    if (standalone()) {
+      btn.classList.add('hidden');
+      return;
+    }
+    const sync = () => {
+      const on = !!fsElement();
+      btn.textContent = on ? '⤡' : '⛶';
+      btn.setAttribute('aria-label', on ? '離開全螢幕' : '全螢幕');
+    };
+    btn.addEventListener('click', () => {
+      if (fsElement()) exitFullscreen();
+      else if (!enterFullscreen()) onUnsupported();
+    });
+    document.addEventListener('fullscreenchange', sync);
+    document.addEventListener('webkitfullscreenchange', sync);
+    sync();
+  }
+
+  G.UI = { toast, chordSVG, statusDot, forceLandscape, localPoint, isRotated: () => rotated, fsSupported, standalone, enterFullscreen, setupFullscreenButton };
 })(window);

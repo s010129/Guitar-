@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="左手指板">
   <meta name="theme-color" content="#0f0d0b">
-  <link rel="manifest" href="manifest.json">
+  <link rel="manifest" href="manifest-left.json">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon.svg">
   <title>左手指板（手機）</title>
@@ -56,6 +56,7 @@
       <span class="lbl" id="instLbl"></span>
       <div class="tabs"><button id="tabFret">指板</button><button id="tabChord">和弦</button></div>
       <span id="posBox"><button id="posL" aria-label="往琴頭">◀</button><span id="posLbl">1–7</span><button id="posR" aria-label="往高把位">▶</button></span>
+      <button id="fsBtn" aria-label="全螢幕">⛶</button>
       <button id="setBtn" aria-label="設定">⚙︎</button>
     </div>
     <div class="stage" id="stage">
@@ -76,10 +77,23 @@
       <h2>指板設定</h2>
       <div class="row"><label>顯示格數</label><select id="fretCount"></select></div>
       <div class="row"><label>弦序翻轉<small>預設最粗的弦在上面（橫放）/ 左邊（直放）</small></label><input type="checkbox" id="flip"></div>
-      <div class="row"><label>左撇子模式<small>琴頭換到另一邊</small></label><input type="checkbox" id="lefty"></div>
+      <div class="row"><label>左撇子模式<small>琴頭換到另一邊。手機也面向觀眾（配合 iPad 演奏模式）時打開</small></label><input type="checkbox" id="lefty"></div>
       <div class="row"><label>按下時顯示音名</label><input type="checkbox" id="names"></div>
       <div class="row"><label>放開手指時空弦繼續響<small>開 = 勾弦（pull-off）；關 = 放開就止音</small></label><input type="checkbox" id="pullRing"></div>
       <div class="actions"><button class="primary" data-close>完成</button></div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="a2hsModal">
+    <div class="sheet scroll">
+      <h2>iPhone 要「加入主畫面」才能全螢幕</h2>
+      <p style="line-height:1.7;color:var(--dim);margin:0">iPhone 的 Safari 不支援網頁全螢幕。請這樣做一次：</p>
+      <ol style="line-height:1.9;padding-left:22px;margin:8px 0">
+        <li>按 Safari 下方（或上方）的<b>分享</b>按鈕 <span style="font-size:18px">⎋</span></li>
+        <li>選<b>「加入主畫面」</b>→ 新增</li>
+        <li>之後從主畫面的「左手指板」圖示打開，就是全螢幕（記得輸入 iPad 上的房號）</li>
+      </ol>
+      <div class="actions"><button class="primary" data-close>知道了</button></div>
     </div>
   </div>
 

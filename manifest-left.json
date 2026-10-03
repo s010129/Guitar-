@@ -1,0 +1,11 @@
+{
+  "name": "雙機吉他・左手指板",
+  "short_name": "左手指板",
+  "start_url": "./left.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0f0d0b",
+  "theme_color": "#0f0d0b",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}

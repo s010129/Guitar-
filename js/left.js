@@ -362,8 +362,8 @@
   // ---------------- 指板觸控 ----------------
   const ptrs = new Map();
   const posOf = (e) => {
-    const r = cv.getBoundingClientRect();
-    return toUV(e.clientX - r.left, e.clientY - r.top);
+    const p = UI.localPoint(cv, e); // 考慮整頁旋轉
+    return toUV(p.x, p.y);
   };
 
   cv.addEventListener('pointerdown', (e) => {
@@ -562,6 +562,7 @@
   $('joinBtn').addEventListener('click', () => join($('roomInput').value));
   $('roomInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') join($('roomInput').value); });
   $('startJoin').addEventListener('click', () => {
+    UI.enterFullscreen(); // Android 等支援的瀏覽器：順便全螢幕
     if (join($('startRoom').value)) $('start').classList.add('hidden');
   });
   $('startRoom').addEventListener('keydown', (e) => {
@@ -570,7 +571,9 @@
   $('startSkip').addEventListener('click', () => $('start').classList.add('hidden'));
 
   // ---------------- 啟動 ----------------
+  UI.forceLandscape();
   Net.lockGestures();
+  UI.setupFullscreenButton($('fsBtn'), () => $('a2hsModal').classList.remove('hidden'));
   $('instLbl').textContent = cfg.name + (cfg.capo ? ` · capo ${cfg.capo}` : '');
   renderPads();
   setMode(st.mode);

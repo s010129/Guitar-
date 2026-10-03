@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="右手刷弦">
   <meta name="theme-color" content="#0f0d0b">
-  <link rel="manifest" href="manifest.json">
+  <link rel="manifest" href="manifest-right.json">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon.svg">
   <title>右手刷弦（iPad）</title>
@@ -44,8 +44,10 @@
       <select id="tuneSel" aria-label="調弦"></select>
       <select id="capoSel" aria-label="移調夾"></select>
       <button id="chordBtn">和弦列</button>
+      <button id="fsBtn" aria-label="全螢幕">⛶</button>
       <button id="setBtn" aria-label="設定">⚙︎</button>
     </div>
+    <button class="bar-toggle" id="barToggle" aria-label="顯示工具列"><span class="dot wait" id="dot2"></span></button>
     <div class="stage" id="stage"><canvas id="cv"></canvas></div>
     <div class="chordbar hidden" id="chordBar"></div>
   </div>
@@ -68,6 +70,7 @@
   <div class="modal hidden" id="setModal">
     <div class="sheet scroll">
       <h2>設定</h2>
+      <div class="row"><label>演奏模式（面向觀眾）<small>像一般吉他一樣把 iPad 抱在身上、螢幕朝外：畫面左右翻轉（琴頸在右），工具列收到左上角的按鈕</small></label><input type="checkbox" id="stageMode"></div>
       <div class="row"><label>音量</label><input type="range" id="volume" min="0" max="1.5" step="0.01"></div>
       <div class="row"><label>殘響</label><input type="range" id="reverb" min="0" max="2" step="0.01"></div>
       <div class="row"><label>刷弦力度靈敏度<small>越高 = 輕輕滑也很大聲</small></label><input type="range" id="sens" min="0.4" max="2.5" step="0.01"></div>
@@ -83,7 +86,11 @@
     <div class="big">🎸</div>
     <h1>右手・刷弦端</h1>
     <p>上下滑過琴弦＝刷弦，點一下弦＝單音，<br>點琴弦以外的地方＝敲琴身，按住琴橋＝悶音。</p>
-    <button class="primary" id="startBtn">點一下開始（開啟聲音）</button>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center">
+      <button class="primary" id="startBtn">🪑 放桌上彈</button>
+      <button class="primary" id="startStage">🎤 演奏模式（面向觀眾）</button>
+    </div>
+    <p style="font-size:13px">演奏模式：像一般吉他一樣抱著 iPad、螢幕朝向觀眾。之後可以在 ⚙︎ 設定切換。</p>
     <p style="font-size:13px">沒聲音？請關掉 iPad 的靜音模式並調高音量。</p>
   </div>
 

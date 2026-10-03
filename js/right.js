@@ -7,7 +7,7 @@
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const audio = new GuitarAudio();
 
-  const settings = Object.assign({ volume: 0.8, reverb: 1, sens: 1, tapping: false, labels: true, flip: false }, store('r.settings') || {});
+  const settings = Object.assign({ volume: 0.8, reverb: 1, sens: 1, tapping: false, labels: true, flip: false, stage: false }, store('r.settings') || {});
   const st = {
     inst: M.INSTRUMENTS[store('r.inst')] ? store('r.inst') : 'acoustic',
     tunes: store('r.tunes') || {},
@@ -36,6 +36,7 @@
     role: 'host',
     onStatus(state, text) {
       UI.statusDot($('dot'), state);
+      UI.statusDot($('dot2'), state);
       $('statusText').textContent = text;
       if (state !== 'connected' && state !== 'unstable') $('lat').textContent = '';
       if (state === 'waiting' && wasConnected) {
@@ -143,6 +144,12 @@
   const bgCanvas = document.createElement('canvas');
   const bgx = bgCanvas.getContext('2d');
   let W = 0, H = 0, dpr = 1, geo = null, dirty = true;
+  // 版面一律用「放桌上」的座標計算；演奏模式（面向觀眾）時左右翻轉，X() 在兩種座標間互換
+  const X = (x) => (settings.stage ? W - x : x);
+  const geomTransform = (c) => {
+    if (settings.stage) c.setTransform(-dpr, 0, 0, dpr, W * dpr, 0);
+    else c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  };
 
   const SHAPE_ACOUSTIC = [[0, 0], [0.02, -0.36], [0.08, -0.62], [0.17, -0.76], [0.28, -0.79], [0.39, -0.73], [0.47, -0.65], [0.55, -0.71], [0.66, -0.9], [0.78, -0.98], [0.89, -0.93], [0.97, -0.72], [1, -0.38], [1, 0], [1, 0.38], [0.97, 0.72], [0.89, 0.93], [0.78, 0.98], [0.66, 0.9], [0.55, 0.71], [0.47, 0.65], [0.39, 0.73], [0.28, 0.79], [0.17, 0.76], [0.08, 0.62], [0.02, 0.36]];
   const SHAPE_GUARD = [[0.2, -0.36], [0.33, -0.52], [0.47, -0.5], [0.58, -0.46], [0.7, -0.46], [0.76, -0.3], [0.76, 0.05], [0.84, 0.18], [0.94, 0.4], [0.88, 0.62], [0.7, 0.7], [0.5, 0.72], [0.34, 0.7], [0.22, 0.58], [0.17, 0.3], [0.17, -0.1]];
@@ -218,7 +225,7 @@
   // ---------------- 靜態背景（琴身、琴頸、響孔、琴橋）----------------
   function drawStatic() {
     const c = bgx, g = geo, i = inst(), look = i.look;
-    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    geomTransform(c); // 靜態層沒有文字，整層一起翻轉
     const bg = c.createRadialGradient(W * 0.62, H * 0.5, 0, W * 0.62, H * 0.5, Math.max(W, H) * 0.8);
     bg.addColorStop(0, '#2c2119');
     bg.addColorStop(1, '#0b0907');
@@ -441,7 +448,7 @@
     const look = inst().look;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.drawImage(bgCanvas, 0, 0);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    geomTransform(ctx);
 
     // 手掌悶音區
     const pz = palmCount > 0;
@@ -454,7 +461,8 @@
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.save();
-    ctx.translate((g.palmX0 + g.palmX1) / 2 + 14, g.bot - 70);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // 文字不翻轉
+    ctx.translate(X((g.palmX0 + g.palmX1) / 2 + 14), g.bot - 70);
     ctx.rotate(-Math.PI / 2);
     ctx.font = '700 13px -apple-system, sans-serif';
     ctx.textAlign = 'center';
@@ -500,7 +508,10 @@
       if (look.double) line(-w - 3, Math.max(1, w * 0.55), col);
     }
 
-    // 音名標籤
+    // 以下是文字與觸控效果：用螢幕座標畫（不翻轉）
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    // 音名標籤（在琴頸那一端）
     if (settings.labels) {
       ctx.font = '700 13px -apple-system, sans-serif';
       ctx.textAlign = 'center';
@@ -511,26 +522,27 @@
         const txt = f < 0 ? '✕' : M.noteName(noteOf(s, f), true) + (f > 0 ? ' ·' + f : '');
         const bw = Math.max(36, ctx.measureText(txt).width + 16);
         ctx.fillStyle = f < 0 ? 'rgba(200,60,60,.92)' : f > 0 ? 'rgba(242,168,59,.95)' : 'rgba(30,24,18,.85)';
-        roundRect(ctx, 10, y - 11, bw, 22, 11);
+        const lx = settings.stage ? W - 10 - bw : 10;
+        roundRect(ctx, lx, y - 11, bw, 22, 11);
         ctx.fill();
         ctx.fillStyle = f > 0 ? '#1b1206' : '#f3ece3';
-        ctx.fillText(txt, 10 + bw / 2, y + 0.5);
+        ctx.fillText(txt, lx + bw / 2, y + 0.5);
       }
     }
 
-    // 和弦名稱
-    ctx.textAlign = 'left';
+    // 和弦名稱（琴頸那一側的上方；演奏模式在右上角）
+    ctx.textAlign = settings.stage ? 'right' : 'left';
     ctx.textBaseline = 'alphabetic';
     if (chordName) {
       ctx.font = '800 44px -apple-system, sans-serif';
       ctx.fillStyle = '#ffcf7a';
       ctx.shadowColor = 'rgba(0,0,0,.6)';
       ctx.shadowBlur = 10;
-      ctx.fillText(chordName, 16, 52);
+      ctx.fillText(chordName, X(16), 52);
       ctx.shadowBlur = 0;
       ctx.font = '600 14px ui-monospace, Menlo, monospace';
       ctx.fillStyle = 'rgba(243,236,227,.6)';
-      ctx.fillText(chordFretsStr + (st.capo ? `  capo ${st.capo}` : ''), 18, 74);
+      ctx.fillText(chordFretsStr + (st.capo ? `  capo ${st.capo}` : ''), X(18), 74);
     }
 
     // 敲擊漣漪
@@ -578,9 +590,10 @@
 
   // ---------------- 觸控 ----------------
   const ptrs = new Map();
+  // 觸控點 → 「放桌上」座標（考慮整頁旋轉與演奏模式的左右翻轉）
   const pos = (e) => {
-    const r = cv.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
+    const p = UI.localPoint(cv, e);
+    return { x: X(p.x), y: p.y };
   };
   const inStrum = (x, y) => x >= 0 && x <= geo.strumEnd && y >= geo.top && y <= geo.bot;
   const inPalm = (x, y) => x >= geo.palmX0 && x <= geo.palmX1 && y >= geo.top && y <= geo.bot;
@@ -609,7 +622,7 @@
     let vel = 0.85;
     if (e.width > 1) vel = clamp(0.55 + (e.width - 20) / 80, 0.5, 1);
     audio.knock(where, depth, vel);
-    ripples.push({ x, y, t: performance.now(), c: where === 'top' ? '#ffd28a' : '#9fd3ff' });
+    ripples.push({ x: X(x), y, t: performance.now(), c: where === 'top' ? '#ffd28a' : '#9fd3ff' }); // 漣漪用螢幕座標
   }
 
   function hideHint() {
@@ -623,6 +636,7 @@
     e.preventDefault();
     if (!geo) return;
     audio.resume();
+    if (appEl.classList.contains('showbar')) appEl.classList.remove('showbar'); // 開始彈就收起工具列
     const { x, y } = pos(e);
     const p = { x, y, t: e.timeStamp, speed: 0, kind: 'strum', armed: new Array(geo.n).fill(true) };
     ptrs.set(e.pointerId, p);
@@ -905,6 +919,7 @@
   bindCheck('tapping', 'tapping');
   bindCheck('labels', 'labels', () => { dirty = true; });
   bindCheck('flip', 'flip', () => layout());
+  bindCheck('stageMode', 'stage', () => applyStage());
   $('setBtn').addEventListener('click', () => $('setModal').classList.remove('hidden'));
   $('newRoom').addEventListener('click', () => {
     newRoom();
@@ -916,28 +931,47 @@
     });
   });
 
-  // 開始（解鎖聲音）
-  $('startBtn').addEventListener('click', async () => {
-    audio.primeMediaSession(); // 必須在點擊當下同步呼叫（iPadOS 16.3 以前的靜音模式）
-    $('start').classList.add('hidden');
+  // 演奏模式（面向觀眾）：畫面左右翻轉、工具列收起來
+  const appEl = document.querySelector('.app');
+  function applyStage() {
+    appEl.classList.toggle('perform', !!settings.stage);
+    appEl.classList.remove('showbar');
+    $('stageMode').checked = !!settings.stage;
+    layout();
+  }
+  $('barToggle').addEventListener('click', () => appEl.classList.toggle('showbar'));
+  UI.setupFullscreenButton($('fsBtn'), () => UI.toast('這個瀏覽器不支援網頁全螢幕：用 Safari「分享 → 加入主畫面」，從主畫面打開就是全螢幕', 4500));
+
+  // 開始（解鎖聲音 + 全螢幕）。全部都要在點擊當下同步呼叫
+  function start(stage) {
+    audio.primeMediaSession(); // iPadOS 16.3 以前的靜音模式
     audio.volume = settings.volume;
     audio.reverbAmt = settings.reverb;
     audio.instId = st.inst;
-    await audio.init();
-    Net.keepAwake();
-  });
+    const ready = audio.init(); // 建立 AudioContext 的部分會在這個點擊裡同步完成
+    UI.enterFullscreen();
+    settings.stage = stage;
+    store('r.settings', settings);
+    applyStage();
+    $('start').classList.add('hidden');
+    ready.then(() => Net.keepAwake());
+  }
+  $('startBtn').addEventListener('click', () => start(false));
+  $('startStage').addEventListener('click', () => start(true));
+  $(settings.stage ? 'startBtn' : 'startStage').classList.remove('primary'); // 上次用的模式比較醒目
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') audio.resume();
   });
 
   // ---------------- 啟動 ----------------
+  UI.forceLandscape();
   Net.lockGestures();
   fillSelects();
   renderChordBar();
   window.addEventListener('resize', () => layout());
   if (window.ResizeObserver) new ResizeObserver(() => layout()).observe(stage);
   updateChordBarVisibility();
-  layout();
+  applyStage();
   updateChord();
   startRoom();
   requestAnimationFrame(frame);
