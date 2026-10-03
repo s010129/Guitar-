@@ -950,7 +950,7 @@
     sendCfg(); // 手機跟著翻轉
   }
   $('barToggle').addEventListener('click', () => appEl.classList.toggle('showbar'));
-  UI.setupFullscreenButton($('fsBtn'), () => UI.toast('這個瀏覽器不支援網頁全螢幕：用 Safari「分享 → 加入主畫面」，從主畫面打開就是全螢幕', 4500));
+  UI.setupFullscreenButton($('fsBtn'), () => $('a2hsModal').classList.remove('hidden'));
 
   // 開始（解鎖聲音 + 全螢幕）。全部都要在點擊當下同步呼叫
   function start(stage) {

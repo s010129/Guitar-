@@ -84,7 +84,12 @@
 
   // ---------- 全螢幕 ----------
   const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement || null;
+  // iPhone / iPad（含 iPadOS 的桌面版 UA）
+  const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  // iOS / iPadOS 不用 Safari 的網頁全螢幕：往下滑（= 往下刷弦）會被當成「離開全螢幕」，
+  // 快速連續觸控也會跳出警告。改用「加入主畫面」，從主畫面打開才是真正的全螢幕
   function fsSupported() {
+    if (isIOS()) return false;
     const d = document.documentElement;
     return !!(d.requestFullscreen || d.webkitRequestFullscreen) && !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
   }
