@@ -15,7 +15,7 @@
   <link rel="stylesheet" href="css/style.css">
   <style>
     .bar { gap: 6px; padding: 0 8px; }
-    .status #statusText { max-width: 34vw; overflow: hidden; text-overflow: ellipsis; }
+    .status #statusText { max-width: calc(34 * var(--ew)); overflow: hidden; text-overflow: ellipsis; }
     #roomInput { width: 64px; text-align: center; font-weight: 800; letter-spacing: 2px; padding: 5px 4px; }
     .tabs { display: flex; }
     .tabs button { border-radius: 0; }
@@ -24,7 +24,7 @@
     #posBox { display: inline-flex; align-items: center; gap: 6px; }
     #posBox.rev { flex-direction: row-reverse; }
     #posLbl { font-size: 13px; color: var(--dim); min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; }
-    #instLbl { max-width: 22vw; overflow: hidden; text-overflow: ellipsis; }
+    #instLbl { max-width: calc(22 * var(--ew)); overflow: hidden; text-overflow: ellipsis; }
 
     .chordpanel { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 96px; gap: 8px; padding: 8px; background: var(--bg); }
     .chordpanel .pads { grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(2, 1fr); }
@@ -33,18 +33,20 @@
     .chordpanel .side { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
     .chordpanel .side .mute { flex: 1; font-size: 22px; font-weight: 800; }
     .chordpanel .side select, .chordpanel .side button { width: 100%; font-size: 13px; padding: 7px 4px; }
-    @media (orientation: portrait) {
-      .chordpanel { grid-template-columns: 1fr; grid-template-rows: 1fr 120px; }
-      .chordpanel .pads { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(4, 1fr); }
-      .chordpanel .side { flex-direction: row; flex-wrap: wrap; }
-      .chordpanel .side .mute { flex: 1 1 100%; }
-      .chordpanel .side select, .chordpanel .side button { flex: 1; width: auto; }
-    }
+    /* html.port / .short = 轉向後版面實際是直的 / 很矮（由 JS 設定，不用 media query） */
+    html.port .chordpanel { grid-template-columns: 1fr; grid-template-rows: 1fr 120px; }
+    html.port .chordpanel .pads { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(4, 1fr); }
+    html.port .chordpanel .side { flex-direction: row; flex-wrap: wrap; }
+    html.port .chordpanel .side .mute { flex: 1 1 100%; }
+    html.port .chordpanel .side select, html.port .chordpanel .side button { flex: 1; width: auto; }
     .start input { font-size: 40px; width: 200px; text-align: center; letter-spacing: 10px; font-weight: 900; padding: 8px; border-radius: 14px; }
-    @media (max-height: 440px) { .start input { font-size: 28px; padding: 4px; width: 170px; } .start .link { padding: 2px; } }
+    html.short .start input { font-size: 28px; padding: 4px; width: 170px; }
+    html.short .start .link { padding: 2px; }
     .start .link { background: none; border: 0; color: var(--dim); text-decoration: underline; font-size: 15px; padding: 6px; }
     .picker .preview { text-align: center; font-size: 34px; font-weight: 900; color: var(--accent2); }
-    @media (orientation: landscape) { .picker .sheet { max-width: 820px; } .picker .grid { grid-template-columns: repeat(12, 1fr); } .picker h2 { display: none; } }
+    html:not(.port) .picker .sheet { max-width: 820px; }
+    html:not(.port) .picker .grid { grid-template-columns: repeat(12, 1fr); }
+    html:not(.port) .picker h2 { display: none; }
     .picker .grid button { font-size: 13px; padding: 6px 0; }
     .picker .grid button.on { background: var(--accent); color: #1b1206; }
   </style>

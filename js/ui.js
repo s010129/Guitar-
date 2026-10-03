@@ -59,14 +59,35 @@
     if (typeof window.orientation === 'number') return window.orientation === 0 || window.orientation === 180;
     return window.innerHeight > window.innerWidth;
   }
+  // 轉的方向跟著「上一次橫放」的方向，裝置抬起哪一端都不會讓畫面上下顛倒
+  let lastLand = null;
+  let ccw = false;
+  function angle() {
+    if (typeof window.orientation === 'number') return ((window.orientation % 360) + 360) % 360;
+    const so = screen.orientation;
+    if (so && typeof so.angle === 'number') return ((so.angle % 360) + 360) % 360;
+    return null;
+  }
   function applyOrientation() {
     const root = document.documentElement;
     const w = window.innerWidth;
     const h = window.innerHeight;
+    const a = angle();
+    if (a === 90 || a === 270) lastLand = a;
     rotated = devicePortrait() && h > w;
+    // 預設順時針（例如鎖定方向時不知道之前怎麼放）
+    ccw = rotated && lastLand !== null && a !== null && (lastLand - a + 360) % 360 === 270;
     root.classList.toggle('rot', rotated);
+    root.classList.toggle('ccw', ccw);
     root.style.setProperty('--vw', w + 'px');
     root.style.setProperty('--vh', h + 'px');
+    // 版面實際的寬高（轉過之後）：CSS 用這些 class 取代 media query 和 vw
+    const ew = rotated ? h : w;
+    const eh = rotated ? w : h;
+    root.style.setProperty('--ew', ew / 100 + 'px');
+    root.classList.toggle('port', eh > ew);
+    root.classList.toggle('short', eh <= 440);
+    root.classList.toggle('narrow', ew <= 820);
   }
   function forceLandscape() {
     applyOrientation();
@@ -78,7 +99,9 @@
   function localPoint(el, e) {
     const r = el.getBoundingClientRect();
     if (!rotated) return { x: e.clientX - r.left, y: e.clientY - r.top };
-    // 轉了 90°：元素的 x 軸朝螢幕下方、y 軸朝螢幕左方，原點在外框右上角
+    // 逆時針：元素的 x 軸朝螢幕上方、y 軸朝螢幕右方，原點在外框左下角
+    if (ccw) return { x: r.bottom - e.clientY, y: e.clientX - r.left };
+    // 順時針：元素的 x 軸朝螢幕下方、y 軸朝螢幕左方，原點在外框右上角
     return { x: e.clientY - r.top, y: r.right - e.clientX };
   }
 

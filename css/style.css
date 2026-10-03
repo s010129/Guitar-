@@ -17,6 +17,7 @@
   --sar: env(safe-area-inset-right);
   --sab: env(safe-area-inset-bottom);
   --sal: env(safe-area-inset-left);
+  --ew: 1vw; /* 版面實際寬度的 1%（轉向後由 JS 設定） */
 }
 
 /* 裝置直放時整頁順時針轉 90°，畫面永遠是橫的（由 UI.forceLandscape 加上 .rot） */
@@ -35,6 +36,14 @@ html.rot body {
   transform-origin: 0 0;
   transform: translateX(var(--vw)) rotate(90deg);
 }
+/* 逆時針（上一次橫放是另一個方向時） */
+html.rot.ccw {
+  --sat: env(safe-area-inset-left);
+  --sar: env(safe-area-inset-top);
+  --sab: env(safe-area-inset-right);
+  --sal: env(safe-area-inset-bottom);
+}
+html.rot.ccw body { transform: translateY(var(--vh)) rotate(-90deg); }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
@@ -160,13 +169,12 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
 .start p { margin: 0; color: var(--dim); max-width: 520px; line-height: 1.6; }
 .start button { font-size: 20px; padding: 14px 34px; border-radius: 14px; }
 /* 橫放手機高度不夠：縮小開始畫面，讓所有按鈕都看得到 */
-@media (max-height: 440px) {
-  .start { gap: 8px; padding: 8px 20px; }
-  .start .big { display: none; }
-  .start h1 { font-size: 20px; }
-  .start p { font-size: 13px; line-height: 1.4; }
-  .start button { font-size: 17px; padding: 9px 26px; }
-}
+/* html.short = 版面高度 ≤ 440px（轉向後也正確，所以不用 media query） */
+html.short .start { gap: 8px; padding: 8px 20px; }
+html.short .start .big { display: none; }
+html.short .start h1 { font-size: 20px; }
+html.short .start p { font-size: 13px; line-height: 1.4; }
+html.short .start button { font-size: 17px; padding: 9px 26px; }
 
 .toast {
   position: fixed;
