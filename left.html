@@ -79,6 +79,7 @@
   <div class="modal hidden" id="setModal">
     <div class="sheet scroll">
       <h2>指板設定</h2>
+      <div class="row"><label>指板大小<small>從上方往下等比縮小，底邊貼齊手機橫放時的下緣</small></label><span style="display:flex;align-items:center;gap:8px"><input type="range" id="boardSize" min="35" max="100" step="5" aria-label="指板大小"><b id="boardSizeVal" style="min-width:42px;text-align:right">100%</b></span></div>
       <div class="row"><label>顯示格數</label><select id="fretCount"></select></div>
       <div class="row"><label>弦序翻轉<small>預設最粗的弦在上面（橫放）/ 左邊（直放）</small></label><input type="checkbox" id="flip"></div>
       <div class="row"><label>演奏模式（抱吉他、面向觀眾）<small>指板左右翻轉（琴頭在右）。和 iPad 同步：任一邊切換，兩邊一起翻</small></label><input type="checkbox" id="perform"></div>

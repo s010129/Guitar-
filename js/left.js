@@ -6,7 +6,7 @@
   const store = Net.store;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
-  const settings = Object.assign({ frets: 0, flip: false, lefty: false, names: true, pullRing: false, perform: false }, store('l.settings') || {});
+  const settings = Object.assign({ frets: 0, flip: false, lefty: false, names: true, pullRing: false, perform: false, size: 100 }, store('l.settings') || {});
   // 指板左右翻轉（琴頭在右）：演奏模式面向觀眾時翻轉；左撇子再反過來
   const mirrored = () => !!settings.lefty !== !!settings.perform;
   const cfg = Object.assign({ inst: 'acoustic', name: '木吉他（鋼弦）', n: 6, tuning: [40, 45, 50, 55, 59, 64], tuneId: 'std', tuneName: '標準 EADGBE', capo: 0 }, store('l.cfg') || {});
@@ -147,8 +147,11 @@
     const edges = [labelW];
     for (let k = 0; k < count; k++) edges.push(edges[k] + (ws[k] / sum) * total);
     const n = cfg.n;
-    const rowH = Lv / n;
-    g = { portrait, Lu, Lv, labelW, muteW, count, edges, n, rowH, fretEnd: Lu - muteW };
+    // 指板大小：從上往下等比縮小，底邊貼齊（橫放時手機的下緣）
+    const vb = Lv * clamp((settings.size || 100) / 100, 0.35, 1);
+    const v0 = Lv - vb;
+    const rowH = vb / n;
+    g = { portrait, Lu, Lv, v0, vb, labelW, muteW, count, edges, n, rowH, fretEnd: Lu - muteW };
     $('posLbl').textContent = `${st.start}–${st.start + count - 1}`;
     // 指板翻轉時，往琴頭的箭頭也要指向右邊
     const m = mirrored();
@@ -171,10 +174,10 @@
   }
   const rowOf = (s) => (settings.flip ? g.n - 1 - s : s);
   const stringAtV = (v) => {
-    const r = clamp(Math.floor(v / g.rowH), 0, g.n - 1);
+    const r = clamp(Math.floor((v - g.v0) / g.rowH), 0, g.n - 1);
     return settings.flip ? g.n - 1 - r : r;
   };
-  const vOf = (s) => (rowOf(s) + 0.5) * g.rowH;
+  const vOf = (s) => g.v0 + (rowOf(s) + 0.5) * g.rowH;
   function fretAtU(u) {
     for (let k = 0; k < g.count; k++) if (u < g.edges[k + 1]) return st.start + k;
     return st.start + g.count - 1;
@@ -209,17 +212,17 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = '#0f0d0b';
     ctx.fillRect(0, 0, W, H);
-    const { Lv, labelW, fretEnd, n, rowH } = g;
+    const { Lv, v0, vb, labelW, fretEnd, n, rowH } = g;
 
     // 指板木頭
-    const a = toXY(labelW, 0), b = toXY(fretEnd, Lv);
+    const a = toXY(labelW, v0), b = toXY(fretEnd, Lv);
     const grad = g.portrait ? ctx.createLinearGradient(a.x, 0, b.x, 0) : ctx.createLinearGradient(0, a.y, 0, b.y);
     grad.addColorStop(0, '#3e2617');
     grad.addColorStop(0.5, '#2c1a0f');
     grad.addColorStop(1, '#3a2315');
     ctx.fillStyle = grad;
     ctx.beginPath();
-    rectUV(labelW, 0, fretEnd, Lv);
+    rectUV(labelW, v0, fretEnd, Lv);
     ctx.fill();
 
     // 正在按的格子底色
@@ -229,7 +232,7 @@
       if (st.mode === 'fret' && f > 0 && f >= st.start && f < st.start + g.count) {
         const k = f - st.start;
         ctx.beginPath();
-        rectUV(g.edges[k], rowOf(s) * rowH, g.edges[k + 1], (rowOf(s) + 1) * rowH);
+        rectUV(g.edges[k], v0 + rowOf(s) * rowH, g.edges[k + 1], v0 + (rowOf(s) + 1) * rowH);
         ctx.fill();
       }
     }
@@ -241,8 +244,8 @@
       const mu = (g.edges[k] + g.edges[k + 1]) / 2;
       const r = Math.min(9, rowH * 0.16);
       ctx.beginPath();
-      if (fr % 12 === 0) { circleUV(mu, Lv * 0.3, r); circleUV(mu, Lv * 0.7, r); }
-      else if ([3, 5, 7, 9, 15, 17, 19, 21].includes(fr)) circleUV(mu, Lv / 2, r);
+      if (fr % 12 === 0) { circleUV(mu, v0 + vb * 0.3, r); circleUV(mu, v0 + vb * 0.7, r); }
+      else if ([3, 5, 7, 9, 15, 17, 19, 21].includes(fr)) circleUV(mu, v0 + vb / 2, r);
       ctx.fill();
     }
 
@@ -250,12 +253,12 @@
     ctx.strokeStyle = '#bdb6a8';
     ctx.lineWidth = 3;
     ctx.beginPath();
-    for (let k = 1; k <= g.count; k++) lineUV(g.edges[k], 0, g.edges[k], Lv);
+    for (let k = 1; k <= g.count; k++) lineUV(g.edges[k], v0, g.edges[k], Lv);
     ctx.stroke();
     ctx.strokeStyle = st.start === 1 ? '#efe6d2' : '#bdb6a8';
     ctx.lineWidth = st.start === 1 ? 8 : 3;
     ctx.beginPath();
-    lineUV(labelW, 0, labelW, Lv);
+    lineUV(labelW, v0, labelW, Lv);
     ctx.stroke();
 
     // 格數
@@ -263,7 +266,7 @@
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = 'rgba(243,236,227,.45)';
-    for (let k = 0; k < g.count; k++) textUV(String(st.start + k), (g.edges[k] + g.edges[k + 1]) / 2, g.portrait ? 8 : Lv - 8);
+    for (let k = 0; k < g.count; k++) textUV(String(st.start + k), (g.edges[k] + g.edges[k + 1]) / 2, g.portrait ? v0 + 8 : Lv - 8);
 
     // 弦
     for (let s = 0; s < n; s++) {
@@ -291,7 +294,7 @@
       const half = Math.min(16, (g.edges[1] - g.edges[0]) * 0.25);
       ctx.fillStyle = 'rgba(242,168,59,.75)';
       ctx.beginPath();
-      rectUV(mu - half, (r0 + 0.5) * rowH, mu + half, (r1 + 0.5) * rowH);
+      rectUV(mu - half, v0 + (r0 + 0.5) * rowH, mu + half, v0 + (r1 + 0.5) * rowH);
       ctx.fill();
     }
 
@@ -317,7 +320,7 @@
     // 左側：弦名 / 悶音切換
     ctx.fillStyle = '#17120e';
     ctx.beginPath();
-    rectUV(0, 0, labelW - 4, Lv);
+    rectUV(0, v0, labelW - 4, Lv);
     ctx.fill();
     ctx.font = '800 15px -apple-system, sans-serif';
     for (let s = 0; s < n; s++) {
@@ -335,17 +338,17 @@
     // 右側：按住悶音
     ctx.fillStyle = st.muteHold > 0 ? '#c43a3a' : '#2a1717';
     ctx.beginPath();
-    rectUV(fretEnd + 3, 0, g.Lu, Lv);
+    rectUV(fretEnd + 3, v0, g.Lu, Lv);
     ctx.fill();
     ctx.fillStyle = st.muteHold > 0 ? '#fff' : '#d99';
     ctx.font = '800 16px -apple-system, sans-serif';
     const mm = fretEnd + (g.Lu - fretEnd) / 2 + 1;
-    textUV('悶', mm, Lv / 2 - 12);
-    textUV('音', mm, Lv / 2 + 10);
+    textUV('悶', mm, v0 + vb / 2 - 12);
+    textUV('音', mm, v0 + vb / 2 + 10);
     if (st.muteHold > 0) {
       ctx.fillStyle = 'rgba(196,58,58,.18)';
       ctx.beginPath();
-      rectUV(labelW, 0, fretEnd, Lv);
+      rectUV(labelW, v0, fretEnd, Lv);
       ctx.fill();
     }
   }
@@ -382,6 +385,7 @@
     e.preventDefault();
     if (!g) return;
     const { u, v } = posOf(e);
+    if (v < g.v0 - 4) return; // 指板縮小後上方的空白處：不算按弦
     const s = stringAtV(v);
     if (u < g.labelW) {
       st.muted[s] = !st.muted[s];
@@ -544,6 +548,20 @@
   $('tabChord').addEventListener('click', () => setMode('chord'));
   $('posL').addEventListener('click', () => { st.start--; layout(); });
   $('posR').addEventListener('click', () => { st.start++; layout(); });
+
+  // 指板大小（從上往下等比縮小）
+  const sizeEl = $('boardSize');
+  const showSize = () => { $('boardSizeVal').textContent = `${settings.size}%`; };
+  sizeEl.value = String(settings.size);
+  showSize();
+  sizeEl.addEventListener('input', () => {
+    settings.size = Number(sizeEl.value);
+    store('l.settings', settings);
+    showSize();
+    ptrs.clear();
+    layout();
+    sendState();
+  });
 
   const fc = $('fretCount');
   fc.innerHTML = '<option value="0">自動</option>' + Array.from({ length: 12 }, (_, k) => `<option value="${k + 4}">${k + 4} 格</option>`).join('');
