@@ -39,6 +39,32 @@
     html.port .chordpanel .side { flex-direction: row; flex-wrap: wrap; }
     html.port .chordpanel .side .mute { flex: 1 1 100%; }
     html.port .chordpanel .side select, html.port .chordpanel .side button { flex: 1; width: auto; }
+    /* 音遊模式 */
+    .gamepanel { position: absolute; inset: 0; background: var(--bg); }
+    .gamepanel canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .gmenu, .gresult { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; background: rgba(15,13,11,.92); overflow-y: auto; }
+    .gtitle { font-size: 18px; font-weight: 800; }
+    .gtitle small { font-size: 12px; font-weight: 400; color: var(--dim); margin-left: 6px; }
+    .gsongs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; flex: 1; min-height: 120px; }
+    html.port .gsongs { grid-template-columns: 1fr; }
+    .gsong { display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 10px 12px; border-radius: 14px; background: linear-gradient(160deg, #2d241b, #1a1511); border: 1px solid var(--line); }
+    .gsong .nm { font-size: 20px; font-weight: 800; }
+    .gsong .sub, .gsong .meta { font-size: 12px; color: var(--dim); }
+    .gsong .lv { color: var(--accent2); letter-spacing: 2px; }
+    .gsong .best { font-size: 12px; color: #7ee08a; margin-top: auto; }
+    .gsong .go { margin-top: 4px; align-self: flex-start; font-weight: 800; }
+    .gopts { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; font-size: 13px; color: var(--dim); }
+    .gopts label { display: flex; align-items: center; gap: 6px; }
+    .gopts input[type=range] { width: 120px; }
+    .glegend { font-size: 12px; color: var(--dim); }
+    .glegend .gd { color: #ffb14d; font-weight: 800; } .glegend .gu { color: #6cc8ff; font-weight: 800; } .glegend .gr { color: #c9a7ff; font-weight: 800; }
+    /* 置中不用 transform：button:active 的 scale 會蓋掉它，按下時按鈕會跳開 */
+    .gstop { position: absolute; top: 8px; left: 0; right: 0; margin: 0 auto; width: max-content; padding: 5px 14px; font-size: 13px; background: rgba(0,0,0,.45); }
+    .gresult { align-items: center; justify-content: center; text-align: center; }
+    .gresult .grade { font-size: 64px; font-weight: 900; line-height: 1; color: var(--accent2); }
+    .gresult .row2 { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; font-size: 14px; color: var(--dim); }
+    .gresult .row2 b { color: var(--text); }
+    .gresult .btns { display: flex; gap: 10px; margin-top: 6px; }
     .start input { font-size: 40px; width: 200px; text-align: center; letter-spacing: 10px; font-weight: 900; padding: 8px; border-radius: 14px; }
     html.short .start input { font-size: 28px; padding: 4px; width: 170px; }
     html.short .start .link { padding: 2px; }
@@ -58,13 +84,27 @@
       <div class="room"><input id="roomInput" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="房號" aria-label="房號"><button id="joinBtn">連</button></div>
       <div class="grow"></div>
       <span class="lbl" id="instLbl"></span>
-      <div class="tabs"><button id="tabFret">指板</button><button id="tabChord">和弦</button></div>
+      <div class="tabs"><button id="tabFret">指板</button><button id="tabChord">和弦</button><button id="tabGame">🎮 音遊</button></div>
       <span id="posBox"><button id="posL" aria-label="往琴頭">◀</button><span id="posLbl">1–7</span><button id="posR" aria-label="往高把位">▶</button></span>
       <button id="fsBtn" aria-label="全螢幕">⛶</button>
       <button id="setBtn" aria-label="設定">⚙︎</button>
     </div>
     <div class="stage" id="stage">
       <canvas id="cv"></canvas>
+      <div class="gamepanel hidden" id="gamePanel">
+        <canvas id="gcv"></canvas>
+        <div class="gmenu scroll" id="gameMenu">
+          <div class="gtitle">🎮 音遊模式 <small>手機會自動按好和弦，你只要在 iPad 上照著刷</small></div>
+          <div class="gsongs" id="gameSongs"></div>
+          <div class="gopts">
+            <label><input type="checkbox" id="gameMetro"> iPad 播放節拍器</label>
+            <label>判定校正 <input type="range" id="gameOffset" min="-150" max="150" step="10" aria-label="判定校正"> <b id="gameOffsetVal">0ms</b></label>
+          </div>
+          <div class="glegend"><span class="gd">↓</span> 下刷（粗弦→細弦）　<span class="gu">↑</span> 上刷（細弦→粗弦）　<span class="gr">↕</span> 紫色長條：一直上下來回刷到結束</div>
+        </div>
+        <div class="gresult hidden" id="gameResult"></div>
+        <button class="gstop hidden" id="gameStop">■ 停止</button>
+      </div>
       <div class="chordpanel hidden" id="chordPanel">
         <div class="pads" id="pads"></div>
         <div class="side">
@@ -129,6 +169,7 @@
   <script src="vendor/nosleep-media.js"></script>
   <script src="js/net.js"></script>
   <script src="js/ui.js"></script>
+  <script src="js/game.js"></script>
   <script src="js/left.js"></script>
 </body>
 </html>

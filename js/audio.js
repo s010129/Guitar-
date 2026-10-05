@@ -352,6 +352,23 @@
 
     // ---------- 敲琴身 ----------
     // where: 'top'（面板，深沉）/ 'side'（側板、琴身外，清脆）；depth 0~1 越靠中央越低沉
+    // 音遊模式的節拍器：短促的木魚聲，第一拍較高較大聲。回傳可以 stop() 的節點
+    click(when, accent) {
+      if (!this.ready) return null;
+      const ctx = this.ctx;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'triangle';
+      o.frequency.value = accent ? 1760 : 1175;
+      g.gain.setValueAtTime(0.0001, when);
+      g.gain.exponentialRampToValueAtTime(accent ? 0.32 : 0.2, when + 0.002);
+      g.gain.exponentialRampToValueAtTime(0.0001, when + 0.05);
+      o.connect(g).connect(this.master);
+      o.start(when);
+      o.stop(when + 0.06);
+      return o;
+    }
+
     knock(where, depth, vel) {
       if (!this.ready) return;
       const ctx = this.ctx;

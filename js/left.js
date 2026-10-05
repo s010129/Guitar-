@@ -11,7 +11,7 @@
   const mirrored = () => !!settings.lefty !== !!settings.perform;
   const cfg = Object.assign({ inst: 'acoustic', name: '木吉他（鋼弦）', n: 6, tuning: [40, 45, 50, 55, 59, 64], tuneId: 'std', tuneName: '標準 EADGBE', capo: 0 }, store('l.cfg') || {});
   const st = {
-    mode: store('l.mode') === 'chord' ? 'chord' : 'fret',
+    mode: ['chord', 'game'].includes(store('l.mode')) ? store('l.mode') : 'fret',
     start: store('l.start') || 1,
     muted: new Array(cfg.n).fill(false),
     pads: store('l.pads') || M.PRESETS[0].chords.slice(),
@@ -21,7 +21,11 @@
     editing: false,
     frets: new Array(cfg.n).fill(0),
     lastKey: '',
+    gameFrets: null, // 音遊模式自動按好的和弦
   };
+  let game = null; // 音遊模式（RhythmGame）
+  let lastLat = 0; // 網路單程延遲（ms），音遊判定用
+  const wireMode = () => (st.mode === 'fret' ? 'fret' : 'chord'); // 音遊模式換和弦也照和弦模式處理
 
   // ---------------- 連線 ----------------
   const link = new Net.Link({
@@ -29,7 +33,13 @@
     onStatus(state, text) {
       UI.statusDot($('dot'), state);
       $('statusText').textContent = text;
-      if (state !== 'connected' && state !== 'unstable') $('lat').textContent = '';
+      if (state !== 'connected' && state !== 'unstable') {
+        $('lat').textContent = '';
+        if (game && game.state === 'play') {
+          game.stop(); // iPad 斷線就停（刷弦傳不過來，繼續只會一直 MISS）
+          UI.toast('和 iPad 斷線了，音遊已停止', 2500);
+        }
+      }
     },
     onOpen() {
       link.send({ t: 'hello' });
@@ -38,11 +48,14 @@
       UI.toast('已連上 iPad 🎸');
     },
     onLatency(ms) {
+      lastLat = ms;
       $('lat').textContent = `${ms.toFixed(0)}ms`;
     },
     onMessage(d) {
       if (d.t === 'cfg') applyCfg(d);
-      else if (d.t === 'pl' && d.s < cfg.n) {
+      else if (d.t === 'st') {
+        if (game) game.onStrum(d.d === 'U' ? 'U' : 'D', performance.now()); // iPad 刷了一下
+      } else if (d.t === 'pl' && d.s < cfg.n) {
         amp[d.s] = Math.max(amp[d.s] || 0, 1.5 + 5 * (d.v || 0.5));
         dirty = true;
       }
@@ -93,6 +106,8 @@
     let f;
     if (st.mode === 'chord') {
       f = st.padSel >= 0 ? padFrets(st.padSel) : new Array(n).fill(0);
+    } else if (st.mode === 'game') {
+      f = st.gameFrets && st.gameFrets.length === n ? st.gameFrets.slice() : new Array(n).fill(0);
     } else {
       f = st.muted.map((m) => (m ? -1 : 0));
       for (const p of ptrs.values()) {
@@ -111,9 +126,9 @@
     dirty = true;
     if (key === st.lastKey && !force) return;
     st.lastKey = key;
-    link.send({ t: 'L', f, m: st.mode, po: !!settings.pullRing });
+    link.send({ t: 'L', f, m: wireMode(), po: !!settings.pullRing });
   }
-  setInterval(() => link.connected && link.send({ t: 'L', f: st.frets, m: st.mode, po: !!settings.pullRing, hb: 1 }), 2000);
+  setInterval(() => link.connected && link.send({ t: 'L', f: st.frets, m: wireMode(), po: !!settings.pullRing, hb: 1 }), 2000);
 
   // ---------------- 指板版面 ----------------
   const stage = $('stage');
@@ -153,6 +168,7 @@
     const rowH = vb / n;
     g = { portrait, Lu, Lv, v0, vb, labelW, muteW, count, edges, n, rowH, fretEnd: Lu - muteW };
     $('posLbl').textContent = `${st.start}–${st.start + count - 1}`;
+    if (game && st.mode === 'game') game.resize();
     // 指板翻轉時，往琴頭的箭頭也要指向右邊
     const m = mirrored();
     $('posBox').classList.toggle('rev', m);
@@ -532,12 +548,20 @@
 
   // ---------------- 模式 / 把位 / 設定 ----------------
   function setMode(m) {
+    if (game && st.mode === 'game' && m !== 'game') game.stop(); // 離開音遊就停掉
     st.mode = m;
     store('l.mode', m);
     $('tabFret').classList.toggle('on', m === 'fret');
     $('tabChord').classList.toggle('on', m === 'chord');
+    $('tabGame').classList.toggle('on', m === 'game');
     $('chordPanel').classList.toggle('hidden', m !== 'chord');
+    $('gamePanel').classList.toggle('hidden', m !== 'game');
     $('posBox').classList.toggle('hidden', m !== 'fret');
+    if (m === 'game' && game) {
+      st.gameFrets = null;
+      game.resize();
+      renderSongs();
+    }
     ptrs.clear();
     st.muteHold = 0;
     muteBtn.classList.remove('on');
@@ -546,6 +570,95 @@
   }
   $('tabFret').addEventListener('click', () => setMode('fret'));
   $('tabChord').addEventListener('click', () => setMode('chord'));
+  $('tabGame').addEventListener('click', () => setMode('game'));
+
+  // ---------------- 音遊模式 ----------------
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const bestOf = (id) => store('game.best.' + id);
+  function renderSongs() {
+    const box = $('gameSongs');
+    box.innerHTML = '';
+    RhythmSongs.forEach((song) => {
+      const p = parseRhythmSong(song);
+      const secs = Math.round((p.beats * 60) / song.bpm);
+      const best = bestOf(song.id);
+      const card = document.createElement('div');
+      card.className = 'gsong';
+      card.innerHTML = `<span class="nm">${esc(song.name)}</span><span class="sub">${esc(song.sub)}</span>`
+        + `<span class="lv">${'★'.repeat(song.level)}${'☆'.repeat(3 - song.level)}</span>`
+        + `<span class="meta">${song.bpm} BPM · ${song.bpb}/4 拍 · ${secs} 秒${p.notes.some((n) => n.type === 'R') ? ' · 有來回刷' : ''}</span>`
+        + (best ? `<span class="best">最佳 ${best.grade} · ${best.score} 分</span>` : '<span class="best"></span>');
+      const go = document.createElement('button');
+      go.className = 'primary go';
+      go.textContent = '▶ 開始';
+      go.addEventListener('click', () => startSong(song));
+      card.appendChild(go);
+      box.appendChild(card);
+    });
+  }
+  function startSong(song) {
+    game.metronome = !!settings.gameMetro;
+    game.offset = Number(settings.gameOffset) || 0;
+    game.start(song);
+  }
+  function renderResult() {
+    const r = game.result;
+    const s = r.stats;
+    const prev = bestOf(r.song.id);
+    const newBest = !prev || s.score > prev.score;
+    if (newBest) store('game.best.' + r.song.id, { score: s.score, grade: r.grade });
+    const box = $('gameResult');
+    box.innerHTML = `<div class="grade">${r.grade}</div>`
+      + `<div style="font-size:18px;font-weight:800">${esc(r.song.name)}　${s.score} 分${newBest ? '　🎉 新紀錄' : ''}</div>`
+      + `<div class="row2"><span>PERFECT <b>${s.perfect}</b></span><span>GOOD <b>${s.good}</b></span><span>方向反了 <b>${s.bad}</b></span><span>MISS <b>${s.miss}</b></span>`
+      + `<span>來回刷 <b>${s.rollOk}/${s.rollOk + s.rollMiss}</b></span><span>最大連擊 <b>${s.maxCombo}</b></span><span>準確率 <b>${Math.round(r.acc * 100)}%</b></span></div>`;
+    const btns = document.createElement('div');
+    btns.className = 'btns';
+    const again = document.createElement('button');
+    again.className = 'primary';
+    again.textContent = '↻ 再玩一次';
+    again.addEventListener('click', () => startSong(r.song));
+    const back = document.createElement('button');
+    back.textContent = '選歌';
+    back.addEventListener('click', () => game.stop());
+    btns.append(again, back);
+    box.appendChild(btns);
+  }
+  game = new RhythmGame({
+    canvas: $('gcv'),
+    setChord(name) {
+      st.gameFrets = name ? M.chordFrets(name, cfg.tuning, cfg.tuneId) : null;
+      sendState();
+    },
+    send: (m) => link.send(m),
+    latency: () => lastLat,
+    connected: () => link.connected,
+    toast: (t) => UI.toast(t, 2500),
+    onState(s) {
+      $('gameMenu').classList.toggle('hidden', s !== 'menu');
+      $('gameResult').classList.toggle('hidden', s !== 'result');
+      $('gameStop').classList.toggle('hidden', s !== 'play');
+      if (s === 'menu') renderSongs();
+      if (s === 'result') renderResult();
+    },
+  });
+  $('gameStop').addEventListener('click', () => game.stop());
+  if (settings.gameMetro === undefined) settings.gameMetro = true;
+  $('gameMetro').checked = !!settings.gameMetro;
+  $('gameMetro').addEventListener('change', () => {
+    settings.gameMetro = $('gameMetro').checked;
+    store('l.settings', settings);
+  });
+  const offEl = $('gameOffset');
+  const showOff = () => { $('gameOffsetVal').textContent = `${settings.gameOffset > 0 ? '+' : ''}${settings.gameOffset}ms`; };
+  if (settings.gameOffset === undefined) settings.gameOffset = 0;
+  offEl.value = String(settings.gameOffset);
+  showOff();
+  offEl.addEventListener('input', () => {
+    settings.gameOffset = Number(offEl.value);
+    store('l.settings', settings);
+    showOff();
+  });
   $('posL').addEventListener('click', () => { st.start--; layout(); });
   $('posR').addEventListener('click', () => { st.start++; layout(); });
 
@@ -637,5 +750,5 @@
   }
   document.addEventListener('pointerdown', () => Net.keepAwake(), { once: true });
 
-  window.__left = { st, cfg, link, settings, computeFrets };
+  window.__left = { st, cfg, link, settings, computeFrets, game };
 })();

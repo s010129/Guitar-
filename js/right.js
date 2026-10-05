@@ -38,7 +38,10 @@
       UI.statusDot($('dot'), state);
       UI.statusDot($('dot2'), state);
       $('statusText').textContent = text;
-      if (state !== 'connected' && state !== 'unstable') $('lat').textContent = '';
+      if (state !== 'connected' && state !== 'unstable') {
+        $('lat').textContent = '';
+        stopMetro(); // 手機斷線就停掉節拍器
+      }
       if (state === 'waiting' && wasConnected) {
         wasConnected = false;
         UI.toast('手機已斷線');
@@ -53,6 +56,7 @@
       updateChordBarVisibility();
     },
     onLatency(ms) {
+      lastLatency = ms;
       $('lat').textContent = `延遲 ${ms.toFixed(0)}ms`;
     },
     onMessage,
@@ -77,6 +81,7 @@
 
   function onMessage(d) {
     if (d.t === 'hello') sendCfg();
+    else if (d.t === 'game') handleGame(d);
     else if (d.t === 'stage') {
       // 手機切換演奏模式：iPad 跟著切（兩邊是同一把吉他）
       if (!!d.on !== !!settings.stage) {
@@ -97,6 +102,33 @@
         markPads();
       }
       applyLeft(d.f, d.m === 'chord' ? 'chord' : 'fret', !!d.po);
+    }
+  }
+
+  // ---------------- 音遊模式：節拍器（手機決定時間，iPad 發聲）----------------
+  let lastLatency = 0;
+  let metro = [];
+  function stopMetro() {
+    metro.forEach((o) => { try { o.stop(); } catch (e) { /* 已經停了 */ } });
+    metro = [];
+  }
+  function handleGame(d) {
+    stopMetro();
+    if (d.cmd !== 'start' || !d.click || !audio.ready) return;
+    const ctx = audio.ctx;
+    const bpm = clamp(Number(d.bpm) || 90, 30, 300);
+    const bpb = clamp(Math.round(d.bpb) || 4, 2, 12);
+    const beats = clamp(Math.round(d.beats) || 0, 0, 2000);
+    const countIn = clamp(Math.round(d.countIn) || 0, 0, 16);
+    const spb = 60 / bpm;
+    // d.delay = 手機送出時到第 0 拍的毫秒數；扣掉網路延遲和喇叭輸出延遲
+    const outLat = ctx.outputLatency || ctx.baseLatency || 0;
+    const t0 = ctx.currentTime + (Number(d.delay) - lastLatency) / 1000 - outLat;
+    for (let i = -countIn; i < beats; i++) {
+      const when = t0 + i * spb;
+      if (when < ctx.currentTime) continue;
+      const o = audio.click(when, (((i % bpb) + bpb) % bpb) === 0);
+      if (o) metro.push(o);
     }
   }
 
@@ -729,6 +761,12 @@
           p.armed[h.s] = false;
         }
         p.knockDeferred = false; // 真的刷到弦了，不是敲琴身
+        // 音遊模式：一次刷弦（同方向、連續劃過）只送一個事件給手機判定。
+        // 下刷 = 從粗弦往細弦（弦序翻轉時是畫面往上滑）
+        const dir = (dy > 0) !== !!settings.flip ? 'D' : 'U';
+        if (p.strokeDir !== dir || t - p.strokeT > 200) link.send({ t: 'st', d: dir });
+        p.strokeDir = dir;
+        p.strokeT = t;
       }
     }
     for (let s = 0; s < geo.n; s++) {
