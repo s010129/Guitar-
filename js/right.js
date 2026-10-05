@@ -50,6 +50,7 @@
     },
     onOpen() {
       wasConnected = true;
+      stopMetro(); // 換了一支手機 / 手機重新連上：之前那首歌的節拍器已經沒人在玩了
       UI.toast('手機（左手）已連線 🎉');
       $('qrModal').classList.add('hidden');
       sendCfg();
@@ -107,29 +108,46 @@
 
   // ---------------- 音遊模式：節拍器（手機決定時間，iPad 發聲）----------------
   let lastLatency = 0;
-  let metro = [];
-  function stopMetro() {
+  let metroGame = null; // 正在進行的歌（節拍器參數 + 第 0 拍的時間）
+  let metro = []; // 已經排好的節拍聲
+  function clearClicks() {
     metro.forEach((o) => { try { o.stop(); } catch (e) { /* 已經停了 */ } });
     metro = [];
   }
+  function stopMetro() {
+    metroGame = null;
+    clearClicks();
+  }
   function handleGame(d) {
     stopMetro();
-    if (d.cmd !== 'start' || !d.click || !audio.ready) return;
+    if (d.cmd !== 'start' || !d.click) return;
+    // d.delay = 手機送出時到第 0 拍的毫秒數；扣掉網路延遲 = 這台 iPad 時鐘上的第 0 拍
+    metroGame = {
+      bpm: clamp(Number(d.bpm) || 90, 30, 300),
+      bpb: clamp(Math.round(d.bpb) || 4, 2, 12),
+      beats: clamp(Math.round(d.beats) || 0, 0, 2000),
+      countIn: clamp(Math.round(d.countIn) || 0, 0, 16),
+      beat0: performance.now() + (Number(d.delay) || 0) - lastLatency,
+    };
+    scheduleMetro();
+  }
+  // 用 performance.now() 對到 AudioContext 的時間再排程。聲音還沒啟動、或被暫停（iOS 中斷、切到背景）時先不排，
+  // 等 AudioContext 回到 running 再重排剩下的拍子，才不會整首歌都慢掉或沒有節拍器
+  function scheduleMetro() {
+    clearClicks();
+    const g = metroGame;
+    if (!g || !audio.ready || audio.ctx.state !== 'running') return;
     const ctx = audio.ctx;
-    const bpm = clamp(Number(d.bpm) || 90, 30, 300);
-    const bpb = clamp(Math.round(d.bpb) || 4, 2, 12);
-    const beats = clamp(Math.round(d.beats) || 0, 0, 2000);
-    const countIn = clamp(Math.round(d.countIn) || 0, 0, 16);
-    const spb = 60 / bpm;
-    // d.delay = 手機送出時到第 0 拍的毫秒數；扣掉網路延遲和喇叭輸出延遲
-    const outLat = ctx.outputLatency || ctx.baseLatency || 0;
-    const t0 = ctx.currentTime + (Number(d.delay) - lastLatency) / 1000 - outLat;
-    for (let i = -countIn; i < beats; i++) {
+    const spb = 60 / g.bpm;
+    const outLat = ctx.outputLatency || ctx.baseLatency || 0; // 喇叭輸出延遲
+    const t0 = ctx.currentTime + (g.beat0 - performance.now()) / 1000 - outLat;
+    for (let i = -g.countIn; i < g.beats; i++) {
       const when = t0 + i * spb;
-      if (when < ctx.currentTime) continue;
-      const o = audio.click(when, (((i % bpb) + bpb) % bpb) === 0);
+      if (when < ctx.currentTime + 0.005) continue;
+      const o = audio.click(when, (((i % g.bpb) + g.bpb) % g.bpb) === 0);
       if (o) metro.push(o);
     }
+    if (!metro.length) metroGame = null; // 歌已經結束了
   }
 
   function sendCfg() {
@@ -761,13 +779,16 @@
           p.armed[h.s] = false;
         }
         p.knockDeferred = false; // 真的刷到弦了，不是敲琴身
-        // 音遊模式：一次刷弦（同方向、連續劃過）只送一個事件給手機判定。
+        // 音遊模式：一次刷弦（同方向、連續劃過）只送一個事件給手機判定；刷得慢、中間停一下也還是同一刷。
         // 下刷 = 從粗弦往細弦（弦序翻轉時是畫面往上滑）
         const dir = (dy > 0) !== !!settings.flip ? 'D' : 'U';
-        if (p.strokeDir !== dir || t - p.strokeT > 200) link.send({ t: 'st', d: dir });
+        if (p.strokeDir !== dir) link.send({ t: 'st', d: dir });
         p.strokeDir = dir;
-        p.strokeT = t;
       }
+      // 手指離開琴弦範圍（刷過頭、移到琴橋那邊）＝這一刷結束，下一次同方向再刷進來就是新的一刷
+      const yTop = Math.min(geo.ys[0], geo.ys[geo.n - 1]) - geo.hyst;
+      const yBot = Math.max(geo.ys[0], geo.ys[geo.n - 1]) + geo.hyst;
+      if (y < yTop || y > yBot || x > geo.strumEnd) p.strokeDir = null;
     }
     for (let s = 0; s < geo.n; s++) {
       if (p.armed[s]) continue;
@@ -1002,7 +1023,12 @@
     store('r.settings', settings);
     applyStage();
     $('start').classList.add('hidden');
-    ready.then(() => Net.keepAwake());
+    ready.then(() => {
+      Net.keepAwake();
+      if (!audio.ctx) return;
+      audio.ctx.addEventListener('statechange', () => { if (audio.ctx.state === 'running') scheduleMetro(); });
+      scheduleMetro(); // 聲音啟動前手機就開始了一首歌
+    });
   }
   $('startBtn').addEventListener('click', () => start(false));
   $('startStage').addEventListener('click', () => start(true));

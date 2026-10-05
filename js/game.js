@@ -163,8 +163,10 @@
     }
 
     update(now) {
-      // 自動按和弦（提早一點點）
-      while (this.ci < this.chords.length && this.timeOf(this.chords[this.ci].beat - CHORD_EARLY) <= now) {
+      // 自動按和弦（提早一點點）。玩家「準時」的刷弦發生在 譜面時間 + 校正，
+      // 和弦訊息又要 L 毫秒才到 iPad，所以要在 譜面時間 − 提早 + 校正 − L 送出
+      const lead = this.offset - (this.o.latency() || 0);
+      while (this.ci < this.chords.length && this.timeOf(this.chords[this.ci].beat - CHORD_EARLY) + lead <= now) {
         this.o.setChord(this.chords[this.ci].name);
         this.ci++;
       }
@@ -347,13 +349,9 @@
       }
 
       // 上方資訊：現在的和弦、下一個和弦、分數、連擊
-      const beatNow = (now - this.t0) / beatMs;
-      let cur = this.chords[0];
-      let next = null;
-      for (let k = 0; k < this.chords.length; k++) {
-        if (this.chords[k].beat <= beatNow + CHORD_EARLY) cur = this.chords[k];
-        else { next = this.chords[k]; break; }
-      }
+      const ci = Math.max(0, this.ci - 1); // 已經自動按好的和弦
+      const cur = this.chords[ci];
+      const next = this.chords.slice(ci + 1).find((ch) => ch.name !== cur.name) || null; // 同一個和弦連續出現時，顯示真正會換到的那個
       c.textAlign = 'left';
       c.fillStyle = '#ffcf7a';
       c.font = '800 34px -apple-system, sans-serif';

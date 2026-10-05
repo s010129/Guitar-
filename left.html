@@ -42,10 +42,11 @@
     /* 音遊模式 */
     .gamepanel { position: absolute; inset: 0; background: var(--bg); }
     .gamepanel canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-    .gmenu, .gresult { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; background: rgba(15,13,11,.92); overflow-y: auto; }
+    .gmenu, .gresult { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; background: rgba(15,13,11,.92); overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
     .gtitle { font-size: 18px; font-weight: 800; }
     .gtitle small { font-size: 12px; font-weight: 400; color: var(--dim); margin-left: 6px; }
-    .gsongs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; flex: 1; min-height: 120px; }
+    /* 不可以比內容矮：矮螢幕時卡片會蓋到下面的選項、按不到「開始」，改成整個選單可以捲動 */
+    .gsongs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; flex: 1 0 auto; }
     html.port .gsongs { grid-template-columns: 1fr; }
     .gsong { display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 10px 12px; border-radius: 14px; background: linear-gradient(160deg, #2d241b, #1a1511); border: 1px solid var(--line); }
     .gsong .nm { font-size: 20px; font-weight: 800; }
@@ -60,7 +61,10 @@
     .glegend .gd { color: #ffb14d; font-weight: 800; } .glegend .gu { color: #6cc8ff; font-weight: 800; } .glegend .gr { color: #c9a7ff; font-weight: 800; }
     /* 置中不用 transform：button:active 的 scale 會蓋掉它，按下時按鈕會跳開 */
     .gstop { position: absolute; top: 8px; left: 0; right: 0; margin: 0 auto; width: max-content; padding: 5px 14px; font-size: 13px; background: rgba(0,0,0,.45); }
-    .gresult { align-items: center; justify-content: center; text-align: center; }
+    /* 置中用 margin:auto 而不是 justify-content:center：內容比畫面高時上面才不會被切掉、捲不到 */
+    .gresult { align-items: center; text-align: center; }
+    .gresult > :first-child { margin-top: auto; }
+    .gresult > :last-child { margin-bottom: auto; }
     .gresult .grade { font-size: 64px; font-weight: 900; line-height: 1; color: var(--accent2); }
     .gresult .row2 { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; font-size: 14px; color: var(--dim); }
     .gresult .row2 b { color: var(--text); }
@@ -102,7 +106,7 @@
           </div>
           <div class="glegend"><span class="gd">↓</span> 下刷（粗弦→細弦）　<span class="gu">↑</span> 上刷（細弦→粗弦）　<span class="gr">↕</span> 紫色長條：一直上下來回刷到結束</div>
         </div>
-        <div class="gresult hidden" id="gameResult"></div>
+        <div class="gresult scroll hidden" id="gameResult"></div>
         <button class="gstop hidden" id="gameStop">■ 停止</button>
       </div>
       <div class="chordpanel hidden" id="chordPanel">

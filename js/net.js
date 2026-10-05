@@ -65,6 +65,7 @@
       this.idWaitSince = 0;
       this.fails = 0;
       this.kicked = false;
+      this.rtts = []; // 最近幾次的來回時間
       this.pingTimer = setInterval(() => this.tick(), 1500);
     }
 
@@ -274,6 +275,7 @@
           setTimeout(() => { try { old.close(); } catch (e) { /* ignore */ } }, 300);
         }
         this.lastSeen = performance.now();
+        this.rtts = []; // 換了連線，舊的延遲不算數
         this.status('connected', '已連線');
         this.onOpen();
       });
@@ -283,7 +285,12 @@
         if (!d || typeof d !== 'object') return;
         if (d.t === 'ping') this.send({ t: 'pong', ts: d.ts });
         else if (d.t === 'pong') {
-          if (typeof d.ts === 'number') this.onLatency((performance.now() - d.ts) / 2);
+          if (typeof d.ts === 'number') {
+            // 取最近 8 次（約 12 秒）裡最快的一次：偶爾一次 Wi-Fi 省電造成的慢回應不會讓延遲估計（音遊判定、節拍器）整個偏掉
+            this.rtts.push(performance.now() - d.ts);
+            if (this.rtts.length > 8) this.rtts.shift();
+            this.onLatency(Math.min(...this.rtts) / 2);
+          }
         } else if (d.t === 'bye') {
           this.kicked = true;
           this.conn = null;

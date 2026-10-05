@@ -21,7 +21,7 @@
     editing: false,
     frets: new Array(cfg.n).fill(0),
     lastKey: '',
-    gameFrets: null, // 音遊模式自動按好的和弦
+    gameChord: null, // 音遊模式自動按好的和弦（名稱；指型依 iPad 目前的樂器 / 調弦算）
   };
   let game = null; // 音遊模式（RhythmGame）
   let lastLat = 0; // 網路單程延遲（ms），音遊判定用
@@ -107,7 +107,8 @@
     if (st.mode === 'chord') {
       f = st.padSel >= 0 ? padFrets(st.padSel) : new Array(n).fill(0);
     } else if (st.mode === 'game') {
-      f = st.gameFrets && st.gameFrets.length === n ? st.gameFrets.slice() : new Array(n).fill(0);
+      const gf = st.gameChord ? M.chordFrets(st.gameChord, cfg.tuning, cfg.tuneId) : null;
+      f = gf && gf.length === n ? gf.slice() : new Array(n).fill(0);
     } else {
       f = st.muted.map((m) => (m ? -1 : 0));
       for (const p of ptrs.values()) {
@@ -557,8 +558,8 @@
     $('chordPanel').classList.toggle('hidden', m !== 'chord');
     $('gamePanel').classList.toggle('hidden', m !== 'game');
     $('posBox').classList.toggle('hidden', m !== 'fret');
-    if (m === 'game' && game) {
-      st.gameFrets = null;
+    if (m === 'game' && game && game.state !== 'play') { // 歌在進行中又點了一次音遊分頁：什麼都不動
+      st.gameChord = null;
       game.resize();
       renderSongs();
     }
@@ -627,7 +628,7 @@
   game = new RhythmGame({
     canvas: $('gcv'),
     setChord(name) {
-      st.gameFrets = name ? M.chordFrets(name, cfg.tuning, cfg.tuneId) : null;
+      st.gameChord = name || null;
       sendState();
     },
     send: (m) => link.send(m),
@@ -643,6 +644,13 @@
     },
   });
   $('gameStop').addEventListener('click', () => game.stop());
+  // 手機切到別的 App、鎖屏：看不到譜面了，停掉這首歌（iPad 的節拍器也會停）
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && game.state === 'play') {
+      game.stop();
+      UI.toast('離開畫面，音遊已停止', 2500);
+    }
+  });
   if (settings.gameMetro === undefined) settings.gameMetro = true;
   $('gameMetro').checked = !!settings.gameMetro;
   $('gameMetro').addEventListener('change', () => {
