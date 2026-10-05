@@ -209,7 +209,7 @@
       else s += sounding * 6;
       for (const t of toneSet) {
         if (present.has(t)) continue;
-        if (t === fifthPc) s -= 15;
+        if (t === fifthPc) s -= iv.length <= 3 ? 40 : 15; // 三和弦少了五度只剩兩個音（例：Open D 的 F 只有 F、A），七和弦才可以省五度
         else if (hasThird && (t === (rootPc + 3) % 12 || t === (rootPc + 4) % 12)) s -= 80;
         else s -= 40;
       }
