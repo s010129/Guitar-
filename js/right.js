@@ -779,16 +779,17 @@
           p.armed[h.s] = false;
         }
         p.knockDeferred = false; // 真的刷到弦了，不是敲琴身
-        // 音遊模式：一次刷弦（同方向、連續劃過）只送一個事件給手機判定；刷得慢、中間停一下也還是同一刷。
-        // 下刷 = 從粗弦往細弦（弦序翻轉時是畫面往上滑）
+        // 音遊模式：一次刷弦只送一個事件給手機判定。下刷 = 從粗弦往細弦（弦序翻轉時是畫面往上滑）。
+        // 換方向、或同方向又刷到這一刷已經刷過的弦（手指繞回去再刷）才算新的一刷；
+        // 刷得慢、中間停一下、手指稍微滑到琴橋外面再回來，都還是同一刷
         const dir = (dy > 0) !== !!settings.flip ? 'D' : 'U';
-        if (p.strokeDir !== dir) link.send({ t: 'st', d: dir });
+        if (p.strokeDir !== dir || hits.some((h) => p.stroke.has(h.s))) {
+          link.send({ t: 'st', d: dir });
+          p.stroke = new Set();
+        }
+        for (const h of hits) p.stroke.add(h.s);
         p.strokeDir = dir;
       }
-      // 手指離開琴弦範圍（刷過頭、移到琴橋那邊）＝這一刷結束，下一次同方向再刷進來就是新的一刷
-      const yTop = Math.min(geo.ys[0], geo.ys[geo.n - 1]) - geo.hyst;
-      const yBot = Math.max(geo.ys[0], geo.ys[geo.n - 1]) + geo.hyst;
-      if (y < yTop || y > yBot || x > geo.strumEnd) p.strokeDir = null;
     }
     for (let s = 0; s < geo.n; s++) {
       if (p.armed[s]) continue;

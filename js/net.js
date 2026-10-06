@@ -286,10 +286,13 @@
         if (d.t === 'ping') this.send({ t: 'pong', ts: d.ts });
         else if (d.t === 'pong') {
           if (typeof d.ts === 'number') {
-            // 取最近 8 次（約 12 秒）裡最快的一次：偶爾一次 Wi-Fi 省電造成的慢回應不會讓延遲估計（音遊判定、節拍器）整個偏掉
+            // 取最近 8 次（約 12 秒）的中位數：偶爾一次 Wi-Fi 省電造成的慢回應不會讓延遲估計（音遊判定、節拍器）整個偏掉，
+            // 網路一直有抖動時也不會像取最小值那樣系統性地低估
             this.rtts.push(performance.now() - d.ts);
             if (this.rtts.length > 8) this.rtts.shift();
-            this.onLatency(Math.min(...this.rtts) / 2);
+            const r = this.rtts.slice().sort((a, b) => a - b);
+            const k = r.length >> 1;
+            this.onLatency((r.length % 2 ? r[k] : (r[k - 1] + r[k]) / 2) / 2);
           }
         } else if (d.t === 'bye') {
           this.kicked = true;

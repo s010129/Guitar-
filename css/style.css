@@ -139,7 +139,7 @@ input { -webkit-user-select: text; user-select: text; }
   max-height: 100%;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  touch-action: pan-y;
+  touch-action: pan-x pan-y; /* 整頁轉 90° 時捲動方向在螢幕上是橫的 */
 }
 .sheet h2 { margin: 0 0 12px; font-size: 18px; }
 .sheet .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); }

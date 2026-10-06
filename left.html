@@ -42,7 +42,7 @@
     /* 音遊模式 */
     .gamepanel { position: absolute; inset: 0; background: var(--bg); }
     .gamepanel canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-    .gmenu, .gresult { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; background: rgba(15,13,11,.92); overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
+    .gmenu, .gresult { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; background: rgba(15,13,11,.92); overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y; } /* 整頁轉 90° 時捲動方向在螢幕上是橫的，兩個方向都要允許 */
     .gtitle { font-size: 18px; font-weight: 800; }
     .gtitle small { font-size: 12px; font-weight: 400; color: var(--dim); margin-left: 6px; }
     /* 不可以比內容矮：矮螢幕時卡片會蓋到下面的選項、按不到「開始」，改成整個選單可以捲動 */
