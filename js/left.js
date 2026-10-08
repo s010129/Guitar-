@@ -1,21 +1,28 @@
 // 左手（手機）：指板多點觸控 / 和弦按鈕，把按弦狀態傳給 iPad
-(function () {
+// 手機版：left.html 載入時自動掛在整頁上。
+// 單機版：iPad 頁面把同一份畫面放進右下角的 shadow DOM 再呼叫 mountLeftHand({ root, host, Link })，
+// 和 iPad 在同一頁（iPad Safari 的多點觸控只會送到同一個文件，左手按弦、右手刷弦才能同時作用）
+function mountLeftHand(opts) {
   'use strict';
+  opts = opts || {};
   const M = Music;
-  const $ = (id) => document.getElementById(id);
+  const root = opts.root || document; // document 或 ShadowRoot
+  const $ = (id) => root.getElementById(id);
   const store = Net.store;
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const EMBED = !!opts.Link; // 單機版：用 iPad 頁面給的同頁連線，不用房號、不經過網路
+  const KEY = EMBED ? 'solo.' : 'l.'; // 設定分開存，不會和同一台裝置上的手機版互相覆蓋
 
-  const settings = Object.assign({ frets: 0, flip: false, lefty: false, names: true, pullRing: false, perform: false, size: 100 }, store('l.settings') || {});
+  const settings = Object.assign({ frets: 0, flip: false, lefty: false, names: true, pullRing: false, perform: false, size: 100 }, store(KEY + 'settings') || {});
   // 指板左右翻轉（琴頭在右）：演奏模式面向觀眾時翻轉；左撇子再反過來
   const mirrored = () => !!settings.lefty !== !!settings.perform;
-  const cfg = Object.assign({ inst: 'acoustic', name: '木吉他（鋼弦）', n: 6, tuning: [40, 45, 50, 55, 59, 64], tuneId: 'std', tuneName: '標準 EADGBE', capo: 0 }, store('l.cfg') || {});
+  const cfg = Object.assign({ inst: 'acoustic', name: '木吉他（鋼弦）', n: 6, tuning: [40, 45, 50, 55, 59, 64], tuneId: 'std', tuneName: '標準 EADGBE', capo: 0 }, store(KEY + 'cfg') || {});
   const st = {
-    mode: ['chord', 'game'].includes(store('l.mode')) ? store('l.mode') : 'fret',
-    start: store('l.start') || 1,
+    mode: ['chord', 'game'].includes(store(KEY + 'mode')) ? store(KEY + 'mode') : 'fret',
+    start: store(KEY + 'start') || 1,
     muted: new Array(cfg.n).fill(false),
-    pads: store('l.pads') || M.PRESETS[0].chords.slice(),
-    preset: store('l.preset') || 'C',
+    pads: store(KEY + 'pads') || M.PRESETS[0].chords.slice(),
+    preset: store(KEY + 'preset') || 'C',
     padSel: -1,
     muteHold: 0,
     editing: false,
@@ -28,7 +35,7 @@
   const wireMode = () => (st.mode === 'fret' ? 'fret' : 'chord'); // 音遊模式換和弦也照和弦模式處理
 
   // ---------------- 連線 ----------------
-  const link = new Net.Link({
+  const link = new (EMBED ? opts.Link : Net.Link)({
     role: 'guest',
     onStatus(state, text) {
       UI.statusDot($('dot'), state);
@@ -37,7 +44,7 @@
         $('lat').textContent = '';
         if (game && game.state === 'play') {
           game.stop(); // iPad 斷線就停（刷弦傳不過來，繼續只會一直 MISS）
-          UI.toast('和 iPad 斷線了，音遊已停止', 2500);
+          if (!EMBED) UI.toast('和 iPad 斷線了，音遊已停止', 2500); // 單機版：是使用者自己關掉的
         }
       }
     },
@@ -45,16 +52,18 @@
       link.send({ t: 'hello' });
       st.lastKey = '';
       sendState(true);
-      UI.toast('已連上 iPad 🎸');
+      if (!EMBED) UI.toast('已連上 iPad 🎸'); // 單機版是同一台 iPad，不用提示
     },
     onLatency(ms) {
       lastLat = ms;
       $('lat').textContent = `${ms.toFixed(0)}ms`;
     },
-    onMessage(d) {
+    onMessage(d, meta) {
       if (d.t === 'cfg') applyCfg(d);
       else if (d.t === 'st') {
-        if (game) game.onStrum(d.d === 'U' ? 'U' : 'D', performance.now()); // iPad 刷了一下
+        // iPad 刷了一下。單機版用送出的時間（同一頁、同一個時鐘）；手機用收到的時間，網路延遲由遊戲扣掉
+        const at = meta && typeof meta.at === 'number' ? meta.at : performance.now();
+        if (game) game.onStrum(d.d === 'U' ? 'U' : 'D', at);
       } else if (d.t === 'pl' && d.s < cfg.n) {
         amp[d.s] = Math.max(amp[d.s] || 0, 1.5 + 5 * (d.v || 0.5));
         dirty = true;
@@ -68,7 +77,7 @@
       UI.toast('請輸入 4 位數房號');
       return false;
     }
-    store('l.room', code);
+    store(KEY + 'room', code);
     $('roomInput').value = code;
     link.join(code);
     Net.keepAwake();
@@ -78,11 +87,11 @@
   function applyCfg(d) {
     const changed = d.n !== cfg.n;
     Object.assign(cfg, { inst: d.inst, name: d.name, n: d.n, tuning: d.tuning, tuneId: d.tuneId, tuneName: d.tuneName, capo: d.capo || 0 });
-    store('l.cfg', cfg);
+    store(KEY + 'cfg', cfg);
     // 跟著 iPad 的演奏模式（抱吉他、面向觀眾）一起左右翻轉
     if (typeof d.stage === 'boolean' && d.stage !== !!settings.perform) {
       setPerform(d.stage, false);
-      UI.toast(d.stage ? 'iPad 切到演奏模式：指板也左右翻轉了' : 'iPad 切回放桌上：指板翻回來了', 2500);
+      if (!EMBED) UI.toast(d.stage ? 'iPad 切到演奏模式：指板也左右翻轉了' : 'iPad 切回放桌上：指板翻回來了', 2500);
     }
     if (changed) {
       st.muted = new Array(cfg.n).fill(false);
@@ -145,14 +154,19 @@
     if (!W || !H) return;
     cv.width = Math.round(W * dpr);
     cv.height = Math.round(H * dpr);
-    const portrait = H > W;
+    // 手機直放又沒轉向時改成直的指板；單機版一律橫的，和上面吉他的弦同方向
+    const portrait = !EMBED && H > W;
+    if (EMBED && opts.host) {
+      opts.host.classList.toggle('port', H > W); // 只影響和弦按鈕 / 選歌的排法
+      opts.host.classList.toggle('tight', H < 250); // 很矮：和弦按鈕只留名字
+    }
     const Lu = portrait ? H : W;
     const Lv = portrait ? W : H;
     const labelW = clamp(Lu * 0.075, 40, 56);
     const muteW = clamp(Lu * 0.07, 40, 56);
     const count = settings.frets || clamp(Math.round((Lu - labelW - muteW) / 80), 4, 12);
     st.start = clamp(st.start, 1, 25 - count);
-    store('l.start', st.start);
+    store(KEY + 'start', st.start);
     const total = Lu - labelW - muteW;
     const ws = [];
     let sum = 0;
@@ -500,7 +514,7 @@
     presetSel.value = '';
     if (!p) return;
     st.pads = p.chords.slice();
-    store('l.pads', st.pads);
+    store(KEY + 'pads', st.pads);
     st.padSel = -1;
     renderPads();
     sendState();
@@ -541,7 +555,7 @@
   });
   $('pickOk').addEventListener('click', () => {
     st.pads[pickIdx] = M.NAMES[pickRoot] + pickType;
-    store('l.pads', st.pads);
+    store(KEY + 'pads', st.pads);
     $('pickModal').classList.add('hidden');
     renderPads();
     if (st.padSel === pickIdx) sendState();
@@ -551,7 +565,7 @@
   function setMode(m) {
     if (game && st.mode === 'game' && m !== 'game') game.stop(); // 離開音遊就停掉
     st.mode = m;
-    store('l.mode', m);
+    store(KEY + 'mode', m);
     $('tabFret').classList.toggle('on', m === 'fret');
     $('tabChord').classList.toggle('on', m === 'chord');
     $('tabGame').classList.toggle('on', m === 'game');
@@ -655,7 +669,7 @@
   $('gameMetro').checked = !!settings.gameMetro;
   $('gameMetro').addEventListener('change', () => {
     settings.gameMetro = $('gameMetro').checked;
-    store('l.settings', settings);
+    store(KEY + 'settings', settings);
   });
   const offEl = $('gameOffset');
   const showOff = () => { $('gameOffsetVal').textContent = `${settings.gameOffset > 0 ? '+' : ''}${settings.gameOffset}ms`; };
@@ -664,7 +678,7 @@
   showOff();
   offEl.addEventListener('input', () => {
     settings.gameOffset = Number(offEl.value);
-    store('l.settings', settings);
+    store(KEY + 'settings', settings);
     showOff();
   });
   $('posL').addEventListener('click', () => { st.start--; layout(); });
@@ -677,7 +691,7 @@
   showSize();
   sizeEl.addEventListener('input', () => {
     settings.size = Number(sizeEl.value);
-    store('l.settings', settings);
+    store(KEY + 'settings', settings);
     showSize();
     ptrs.clear();
     layout();
@@ -689,13 +703,13 @@
   fc.value = String(settings.frets);
   fc.addEventListener('change', () => {
     settings.frets = Number(fc.value);
-    store('l.settings', settings);
+    store(KEY + 'settings', settings);
     layout();
   });
   // 演奏模式：手機和 iPad 同步
   function setPerform(on, tellIpad) {
     settings.perform = !!on;
-    store('l.settings', settings);
+    store(KEY + 'settings', settings);
     $('perform').checked = settings.perform;
     ptrs.clear();
     layout();
@@ -709,13 +723,13 @@
     el.checked = !!settings[key];
     el.addEventListener('change', () => {
       settings[key] = el.checked;
-      store('l.settings', settings);
+      store(KEY + 'settings', settings);
       layout();
       sendState(true);
     });
   }
   $('setBtn').addEventListener('click', () => $('setModal').classList.remove('hidden'));
-  document.querySelectorAll('.modal').forEach((m) => {
+  root.querySelectorAll('.modal').forEach((m) => {
     m.addEventListener('click', (e) => {
       if (e.target === m || e.target.hasAttribute('data-close')) m.classList.add('hidden');
     });
@@ -734,9 +748,18 @@
   $('startSkip').addEventListener('click', () => $('start').classList.add('hidden'));
 
   // ---------------- 啟動 ----------------
-  UI.forceLandscape();
-  Net.lockGestures();
-  UI.setupFullscreenButton($('fsBtn'), () => $('a2hsModal').classList.remove('hidden'));
+  if (!EMBED) {
+    // 單機版由 iPad 頁面負責轉向、防誤觸和全螢幕
+    UI.forceLandscape();
+    Net.lockGestures();
+    UI.setupFullscreenButton($('fsBtn'), () => $('a2hsModal').classList.remove('hidden'));
+  } else {
+    // 單機版的說明文字：沒有手機
+    const say = (sel, from, to) => root.querySelectorAll(sel).forEach((el) => { if (el.textContent.includes(from)) el.textContent = to; });
+    say('.gtitle small', '手機會自動按好和弦', '左手區會自動按好和弦，你只要在上面的琴弦照著刷');
+    say('.sheet .row small', '底邊貼齊手機', '從上方往下等比縮小，底邊貼齊左手區的下緣');
+    say('.sheet .row small', '和 iPad 同步', '指板左右翻轉（琴頭在右），和上面的吉他一起翻');
+  }
   $('instLbl').textContent = cfg.name + (cfg.capo ? ` · capo ${cfg.capo}` : '');
   renderPads();
   setMode(st.mode);
@@ -746,8 +769,10 @@
   requestAnimationFrame(frame);
 
   const qRoom = new URLSearchParams(location.search).get('room');
-  const saved = store('l.room');
-  if (qRoom && join(qRoom)) {
+  const saved = store(KEY + 'room');
+  if (EMBED) {
+    // 單機版：iPad 頁面打開同頁連線就會連上，不用房號、也不用開始畫面
+  } else if (qRoom && join(qRoom)) {
     // 從 QR Code 進來：直接連線
   } else {
     if (saved) {
@@ -756,7 +781,10 @@
     }
     $('start').classList.remove('hidden');
   }
-  document.addEventListener('pointerdown', () => Net.keepAwake(), { once: true });
+  if (!EMBED) document.addEventListener('pointerdown', () => Net.keepAwake(), { once: true }); // 單機版由 iPad 頁面負責
 
-  window.__left = { st, cfg, link, settings, computeFrets, game };
-})();
+  // 給 iPad 頁面 / 測試用
+  return { st, cfg, link, settings, computeFrets, game, layout, cellXY: (s, f) => toXY(cellMid(f), vOf(s)) };
+}
+// 手機版（left.html）：自動掛在整頁上
+if (document.getElementById('tabFret')) window.__left = mountLeftHand();

@@ -7,7 +7,7 @@
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const audio = new GuitarAudio();
 
-  const settings = Object.assign({ volume: 0.8, reverb: 1, sens: 1, tapping: false, labels: true, flip: false, stage: false }, store('r.settings') || {});
+  const settings = Object.assign({ volume: 0.8, reverb: 1, sens: 1, tapping: false, labels: true, flip: false, stage: false, solo: false, soloW: 55, soloH: 45 }, store('r.settings') || {});
   const st = {
     inst: M.INSTRUMENTS[store('r.inst')] ? store('r.inst') : 'acoustic',
     tunes: store('r.tunes') || {},
@@ -35,12 +35,12 @@
   const link = new Net.Link({
     role: 'host',
     onStatus(state, text) {
-      UI.statusDot($('dot'), state);
-      UI.statusDot($('dot2'), state);
-      $('statusText').textContent = text;
+      linkState = state;
+      linkText = text;
+      renderStatus();
       if (state !== 'connected' && state !== 'unstable') {
         $('lat').textContent = '';
-        stopMetro(); // 手機斷線就停掉節拍器
+        stopMetro('phone'); // 手機斷線就停掉手機開始的那首歌的節拍器
       }
       if (state === 'waiting' && wasConnected) {
         wasConnected = false;
@@ -50,8 +50,8 @@
     },
     onOpen() {
       wasConnected = true;
-      stopMetro(); // 換了一支手機 / 手機重新連上：之前那首歌的節拍器已經沒人在玩了
-      UI.toast('手機（左手）已連線 🎉');
+      stopMetro('phone'); // 換了一支手機 / 手機重新連上：之前那首歌的節拍器已經沒人在玩了
+      UI.toast(settings.solo ? '手機已連線（單機版開啟中，手機的左手不會作用）' : '手機（左手）已連線 🎉', settings.solo ? 3500 : 1800);
       $('qrModal').classList.add('hidden');
       sendCfg();
       updateChordBarVisibility();
@@ -60,9 +60,30 @@
       lastLatency = ms;
       $('lat').textContent = `延遲 ${ms.toFixed(0)}ms`;
     },
-    onMessage,
+    onMessage: (d) => onMessage(d, 'phone'),
   });
   let wasConnected = false;
+  let linkState = 'waiting';
+  let linkText = '準備中';
+  // 連線燈號：單機版沒連手機時顯示「單機版」，不要一直顯示等待手機
+  function renderStatus() {
+    const solo = settings.solo && !link.connected;
+    const state = solo ? 'connected' : linkState;
+    UI.statusDot($('dot'), state);
+    UI.statusDot($('dot2'), state);
+    $('statusText').textContent = solo ? '單機版' : linkText;
+  }
+  // 單機版：右下角的左手區在同一頁裡，用同頁連線直接溝通（不經過網路）
+  const pair = Net.localPair();
+  const local = pair.host({
+    onStatus(state) { if (state !== 'connected') stopMetro('local'); },
+    onMessage: (d, meta) => onMessage(d, 'local', meta),
+  });
+  // 給左手的訊息（設定、撥弦、刷弦）：手機和單機版的左手頁都送
+  const sendLeft = (m) => {
+    link.send(m);
+    local.send(m);
+  };
   // 房號被別的分頁 / 裝置占用超過約 95 秒（net.js 會先等舊連線釋放）才換新房號
   link.onIdTaken = () => {
     newRoom();
@@ -80,9 +101,11 @@
     if (!$('qrModal').classList.contains('hidden')) showQR();
   }
 
-  function onMessage(d) {
+  // src = 'phone'（手機）或 'local'（單機版右下角的左手區）
+  // meta.at = 單機版訊息送出時的 performance.now()
+  function onMessage(d, src, meta) {
     if (d.t === 'hello') sendCfg();
-    else if (d.t === 'game') handleGame(d);
+    else if (d.t === 'game') handleGame(d, src, meta);
     else if (d.t === 'stage') {
       // 手機切換演奏模式：iPad 跟著切（兩邊是同一把吉他）
       if (!!d.on !== !!settings.stage) {
@@ -93,6 +116,7 @@
       }
     }
     else if (d.t === 'L') {
+      if ((src === 'local') !== !!settings.solo) return; // 單機版開著時只聽右下角的左手，關掉時只聽手機
       if (!Array.isArray(d.f) || d.f.length !== nStr()) {
         sendCfg();
         return;
@@ -114,20 +138,30 @@
     metro.forEach((o) => { try { o.stop(); } catch (e) { /* 已經停了 */ } });
     metro = [];
   }
-  function stopMetro() {
+  // src：只停掉從那裡開始的歌（例如手機斷線不影響單機版正在玩的歌）；不給 = 全部停
+  function stopMetro(src) {
+    if (src && metroGame && metroGame.src !== src) return;
     metroGame = null;
     clearClicks();
   }
-  function handleGame(d) {
+  function handleGame(d, src, meta) {
+    if (d.cmd !== 'start') {
+      stopMetro(src); // 只停掉同一個左手開始的歌（手機按停止不會停掉單機版正在玩的歌）
+      return;
+    }
+    if ((src === 'local') !== !!settings.solo) return; // 現在沒在用的那個左手（單機版開著時的手機）不能換掉節拍器
     stopMetro();
-    if (d.cmd !== 'start' || !d.click) return;
-    // d.delay = 手機送出時到第 0 拍的毫秒數；扣掉網路延遲 = 這台 iPad 時鐘上的第 0 拍
+    if (!d.click) return;
+    // d.delay = 送出時到第 0 拍的毫秒數；扣掉網路延遲 = 這台 iPad 時鐘上的第 0 拍（單機版沒有網路延遲）
     metroGame = {
+      src,
       bpm: clamp(Number(d.bpm) || 90, 30, 300),
       bpb: clamp(Math.round(d.bpb) || 4, 2, 12),
       beats: clamp(Math.round(d.beats) || 0, 0, 2000),
       countIn: clamp(Math.round(d.countIn) || 0, 0, 16),
-      beat0: performance.now() + (Number(d.delay) || 0) - lastLatency,
+      beat0: (src === 'local' && meta && typeof meta.at === 'number'
+        ? meta.at // 單機版：同一頁、同一個時鐘，從送出的那一刻算
+        : performance.now() - lastLatency) + (Number(d.delay) || 0),
     };
     scheduleMetro();
   }
@@ -152,7 +186,7 @@
 
   function sendCfg() {
     const t = tuningObj();
-    link.send({ t: 'cfg', inst: st.inst, name: inst().name, n: nStr(), tuning: t.notes, tuneId: t.id, tuneName: t.name, capo: st.capo, stage: !!settings.stage });
+    sendLeft({ t: 'cfg', inst: st.inst, name: inst().name, n: nStr(), tuning: t.notes, tuneId: t.id, tuneName: t.name, capo: st.capo, stage: !!settings.stage });
   }
 
   // ---------------- 左手狀態 → 聲音 ----------------
@@ -237,9 +271,11 @@
     }
     const i = inst(), look = i.look, n = nStr();
     const solid = i.body === 'solid';
-    let bodyH = Math.min(H * 0.94, W * 0.6) * (look.small ? 0.8 : 1);
+    // 單機版：右下角是左手區，吉他畫在它上面那一段，琴弦才不會被蓋住
+    const GH = settings.solo ? Math.round(H * (1 - settings.soloH / 100)) : H;
+    let bodyH = Math.min(GH * 0.94, W * 0.6) * (look.small ? 0.8 : 1);
     let bodyL = bodyH * (solid ? 1.32 : 1.38);
-    const portrait = H > W;
+    const portrait = GH > W;
     const maxL = W * (portrait ? 0.97 : 0.86);
     if (bodyL > maxL) {
       const k = maxL / bodyL;
@@ -247,8 +283,14 @@
       bodyH *= k;
     }
     const x0 = W - bodyL - Math.max(8, W * 0.02);
-    const cy = H / 2;
-    const spread = Math.min(bodyH * (portrait ? 0.46 : 0.4), H * 0.56) * (n === 4 ? 0.78 : 1);
+    let cy = GH / 2;
+    let spread = Math.min(bodyH * (portrait ? 0.46 : 0.4), GH * 0.56) * (n === 4 ? 0.78 : 1);
+    if (settings.solo) {
+      // 左手區很高時吉他那一段變矮：左上角的和弦名稱 / 指法（到 y≈84）不能被最上面那條弦的音名標籤蓋住
+      const top = 98, bot = GH - 14;
+      spread = Math.max(40, Math.min(spread, bot - top));
+      cy = clamp(cy, top + spread / 2, Math.max(top + spread / 2, bot - spread / 2));
+    }
     const spacing = spread / (n - 1);
     const ys = [];
     for (let s = 0; s < n; s++) ys[s] = cy - spread / 2 + (settings.flip ? n - 1 - s : s) * spacing;
@@ -262,6 +304,7 @@
     const body = smoothPath(shape.map(toBody));
     const guard = solid ? smoothPath(SHAPE_GUARD.map(toBody)) : null;
     geo = {
+      gh: GH,
       n, x0, cy, bodyL, bodyH, spread, spacing, ys, bridgeX, holeX, holeR, fbEnd, solid, body, guard,
       top: cy - spread / 2 - half,
       bot: cy + spread / 2 + half,
@@ -622,7 +665,7 @@
       ctx.font = '600 15px -apple-system, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillStyle = 'rgba(255,255,255,.65)';
-      ctx.fillText('↕ 上下滑過琴弦刷弦　• 點弦＝單音　• 點其他地方＝敲琴身　• 按住琴橋＝悶音', W / 2, H - 16);
+      ctx.fillText('↕ 上下滑過琴弦刷弦　• 點弦＝單音　• 點其他地方＝敲琴身　• 按住琴橋＝悶音', W / 2, geo.gh - 16);
     }
   }
 
@@ -666,7 +709,7 @@
     audio.pluck(s, freqOf(s, Math.max(0, f)), vel, pick, mode, delay);
     amp[s] = Math.max(amp[s] || 0, mode === 'dead' ? 1.5 : mode === 'palm' ? 2.5 : 3 + 7 * vel);
     visTau[s] = mode === 'normal' ? 0.45 : 0.06;
-    link.send({ t: 'pl', s, v: Math.round(vel * 100) / 100 });
+    sendLeft({ t: 'pl', s, v: Math.round(vel * 100) / 100 });
   }
 
   function knockAt(x, y, e) {
@@ -784,7 +827,7 @@
         // 刷得慢、中間停一下、手指稍微滑到琴橋外面再回來，都還是同一刷
         const dir = (dy > 0) !== !!settings.flip ? 'D' : 'U';
         if (p.strokeDir !== dir || hits.some((h) => p.stroke.has(h.s))) {
-          link.send({ t: 'st', d: dir });
+          sendLeft({ t: 'st', d: dir });
           p.stroke = new Set();
         }
         for (const h of hits) p.stroke.add(h.s);
@@ -873,7 +916,7 @@
   }
 
   function updateChordBarVisibility() {
-    const show = st.chordBar == null ? !link.connected : st.chordBar;
+    const show = !settings.solo && (st.chordBar == null ? !link.connected : st.chordBar); // 單機版有自己的左手區
     const bar = $('chordBar');
     if (bar.classList.contains('hidden') === !show) return;
     bar.classList.toggle('hidden', !show);
@@ -1000,6 +1043,82 @@
     });
   });
 
+  // ---------------- 單機版：左手指板在右下角 ----------------
+  // 左手區不用 iframe：iPad Safari 一次多點觸控只會送到同一個文件，左手按弦、右手刷弦必須在同一頁。
+  // 所以把手機版的左手畫面（left.html 的內容和樣式）放進 shadow DOM，id 和樣式都不會和這一頁衝突
+  const soloBox = $('soloBox');
+  let left = null; // 掛好的左手區（mountLeftHand 回傳的東西）
+  let leftLoading = false;
+  // 手機版的樣式是寫給整頁的：html.xxx → :host(.xxx)、:root / html, body → :host
+  const scopeCss = (css) => css
+    .replace(/:root\b/g, ':host')
+    .replace(/\bhtml,\s*body\b/g, ':host')
+    .replace(/\bhtml((?:\.[\w-]+|:not\([^)]*\))+)/g, ':host($1)');
+  async function loadLeft() {
+    const [html, css] = await Promise.all(['left.html', 'css/style.css'].map((u) => fetch(u).then((r) => {
+      if (!r.ok) throw new Error(u + ' ' + r.status);
+      return r.text();
+    })));
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const sr = soloBox.shadowRoot || soloBox.attachShadow({ mode: 'open' });
+    sr.innerHTML = '';
+    const style = document.createElement('style');
+    style.textContent = scopeCss(css + '\n' + [...doc.querySelectorAll('style')].map((x) => x.textContent).join('\n'));
+    sr.appendChild(style);
+    for (const el of [...doc.body.children]) if (el.tagName !== 'SCRIPT') sr.appendChild(document.importNode(el, true));
+    soloBox.classList.add('embed');
+    left = mountLeftHand({ root: sr, host: soloBox, Link: function (h) { return pair.guest(h); } });
+  }
+  function applySolo() {
+    const on = !!settings.solo;
+    soloBox.classList.toggle('hidden', !on);
+    soloBox.style.width = settings.soloW + '%';
+    soloBox.style.height = settings.soloH + '%';
+    $('soloMode').checked = on;
+    $('startSolo').checked = on;
+    $('chordBtn').classList.toggle('hidden', on); // 和弦列讓給左手區
+    renderStatus();
+    document.querySelectorAll('.soloopt').forEach((r) => r.classList.toggle('hidden', !on));
+    if (on) {
+      if (st.padSel >= 0) {
+        st.padSel = -1; // iPad 的和弦列讓給左手區
+        markPads();
+      }
+      if (left) pair.setOpen(true);
+      else if (!leftLoading) {
+        leftLoading = true;
+        loadLeft().then(() => {
+          if (settings.solo) pair.setOpen(true);
+        }).catch((e) => {
+          console.warn(e);
+          UI.toast('左手區載入失敗，請檢查網路後重新整理', 3500);
+        }).finally(() => { leftLoading = false; });
+      }
+    } else if (pair.open) {
+      pair.setOpen(false); // 左手區那邊會停掉正在玩的歌
+      stopMetro('local');
+      applyLeft(new Array(nStr()).fill(0), 'chord'); // 放開左手區按住的弦
+      sendCfg(); // 有連手機的話，手機會馬上把它的左手狀態送過來
+    }
+    updateChordBarVisibility();
+    layout();
+  }
+  const bindPct = (id, key) => {
+    const el = $(id);
+    const show = () => { $(id + 'Val').textContent = settings[key] + '%'; };
+    el.value = settings[key];
+    show();
+    el.addEventListener('input', () => {
+      settings[key] = Number(el.value);
+      store('r.settings', settings);
+      show();
+      applySolo();
+    });
+  };
+  bindPct('soloW', 'soloW');
+  bindPct('soloH', 'soloH');
+  bindCheck('soloMode', 'solo', () => applySolo());
+
   // 演奏模式（面向觀眾）：畫面左右翻轉、工具列收起來
   const appEl = document.querySelector('.app');
   function applyStage() {
@@ -1021,8 +1140,10 @@
     const ready = audio.init(); // 建立 AudioContext 的部分會在這個點擊裡同步完成
     UI.enterFullscreen();
     settings.stage = stage;
+    settings.solo = $('startSolo').checked;
     store('r.settings', settings);
     applyStage();
+    applySolo();
     $('start').classList.add('hidden');
     ready.then(() => {
       Net.keepAwake();
@@ -1047,10 +1168,11 @@
   if (window.ResizeObserver) new ResizeObserver(() => layout()).observe(stage);
   updateChordBarVisibility();
   applyStage();
+  applySolo();
   updateChord();
   startRoom();
   requestAnimationFrame(frame);
 
   // 給測試 / 除錯用
-  window.__right = { st, geo: () => geo, audio, link, applyLeft, settings };
+  window.__right = { st, geo: () => geo, audio, link, local, applyLeft, settings, applySolo, get left() { return left; } };
 })();

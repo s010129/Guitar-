@@ -29,6 +29,12 @@
     #qrBox svg, #qrBox img { width: 220px; height: 220px; background: #fff; border-radius: 10px; padding: 8px; }
     .bigcode { text-align: center; font-size: 54px; font-weight: 900; letter-spacing: 10px; color: var(--accent2); font-variant-numeric: tabular-nums; }
     .steps { color: var(--dim); line-height: 1.7; font-size: 14px; padding-left: 20px; margin: 8px 0; }
+    /* 單機版：左手區在右下角（裡面是 shadow DOM 版的手機左手畫面），寬高可以調 */
+    .solo { position: absolute; right: 0; bottom: 0; z-index: 5; overflow: hidden; border-top: 1px solid var(--line); border-left: 1px solid var(--line); border-top-left-radius: 14px; box-shadow: -6px -6px 24px rgba(0, 0, 0, .45); background: var(--bg); }
+    .rv { display: flex; align-items: center; gap: 8px; }
+    .rv b { min-width: 42px; text-align: right; }
+    .startopt { display: flex; align-items: center; gap: 10px; font-size: 16px; color: var(--text); background: rgba(0, 0, 0, .25); border: 1px solid var(--line); border-radius: 12px; padding: 8px 14px; }
+    html.short .startopt { font-size: 14px; padding: 5px 12px; }
     .url { font-size: 12px; color: var(--dim); word-break: break-all; text-align: center; -webkit-user-select: all; user-select: all; }
   </style>
 </head>
@@ -47,7 +53,10 @@
       <button id="setBtn" aria-label="設定">⚙︎</button>
     </div>
     <button class="bar-toggle" id="barToggle" aria-label="顯示工具列"><span class="dot wait" id="dot2"></span></button>
-    <div class="stage" id="stage"><canvas id="cv"></canvas></div>
+    <div class="stage" id="stage">
+      <canvas id="cv"></canvas>
+      <div class="solo hidden" id="soloBox" aria-label="左手指板（單機版）"></div>
+    </div>
     <div class="chordbar hidden" id="chordBar"></div>
   </div>
 
@@ -83,6 +92,9 @@
     <div class="sheet scroll">
       <h2>設定</h2>
       <div class="row"><label>演奏模式（面向觀眾）<small>像一般吉他一樣把 iPad 抱在身上、螢幕朝外：畫面左右翻轉（琴頸在右），工具列收到左上角的按鈕</small></label><input type="checkbox" id="stageMode"></div>
+      <div class="row"><label>單機版（不用手機）<small>左手指板顯示在右下角，一台 iPad 就能彈：右下角按和弦、上面刷弦</small></label><input type="checkbox" id="soloMode"></div>
+      <div class="row soloopt"><label>左手區寬度</label><span class="rv"><input type="range" id="soloW" min="30" max="100" step="5" aria-label="左手區寬度"><b id="soloWVal"></b></span></div>
+      <div class="row soloopt"><label>左手區高度</label><span class="rv"><input type="range" id="soloH" min="30" max="65" step="5" aria-label="左手區高度"><b id="soloHVal"></b></span></div>
       <div class="row"><label>音量</label><input type="range" id="volume" min="0" max="1.5" step="0.01"></div>
       <div class="row"><label>殘響</label><input type="range" id="reverb" min="0" max="2" step="0.01"></div>
       <div class="row"><label>刷弦力度靈敏度<small>越高 = 輕輕滑也很大聲</small></label><input type="range" id="sens" min="0.4" max="2.5" step="0.01"></div>
@@ -102,7 +114,8 @@
       <button class="primary" id="startBtn">🪑 放桌上彈</button>
       <button class="primary" id="startStage">🎤 演奏模式（面向觀眾）</button>
     </div>
-    <p style="font-size:13px">演奏模式：像一般吉他一樣抱著 iPad、螢幕朝向觀眾。之後可以在 ⚙︎ 設定切換。</p>
+    <label class="startopt"><input type="checkbox" id="startSolo"> 單機版（不用手機）：左手指板在右下角</label>
+    <p style="font-size:13px">演奏模式：像一般吉他一樣抱著 iPad、螢幕朝向觀眾。之後都可以在 ⚙︎ 設定切換。</p>
     <p style="font-size:13px">沒聲音？請關掉 iPad 的靜音模式並調高音量。</p>
   </div>
 
@@ -114,6 +127,8 @@
   <script src="js/net.js"></script>
   <script src="js/ui.js"></script>
   <script src="js/audio.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/left.js"></script>
   <script src="js/right.js"></script>
 </body>
 </html>

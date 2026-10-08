@@ -26,16 +26,16 @@
     #posLbl { font-size: 13px; color: var(--dim); min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; }
     #instLbl { max-width: calc(22 * var(--ew)); overflow: hidden; text-overflow: ellipsis; }
 
-    .chordpanel { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 96px; gap: 8px; padding: 8px; background: var(--bg); }
-    .chordpanel .pads { grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(2, 1fr); }
+    .chordpanel { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 96px; grid-template-rows: minmax(0, 1fr); gap: 8px; padding: 8px; background: var(--bg); }
+    .chordpanel .pads { grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(2, minmax(0, 1fr)); }
     .chordpanel .pad .nm { font-size: 30px; }
     .chordpanel .pad svg { width: 58px; height: 48px; }
     .chordpanel .side { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
     .chordpanel .side .mute { flex: 1; font-size: 22px; font-weight: 800; }
     .chordpanel .side select, .chordpanel .side button { width: 100%; font-size: 13px; padding: 7px 4px; }
     /* html.port / .short = 轉向後版面實際是直的 / 很矮（由 JS 設定，不用 media query） */
-    html.port .chordpanel { grid-template-columns: 1fr; grid-template-rows: 1fr 120px; }
-    html.port .chordpanel .pads { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(4, 1fr); }
+    html.port .chordpanel { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) 120px; }
+    html.port .chordpanel .pads { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(4, minmax(0, 1fr)); }
     html.port .chordpanel .side { flex-direction: row; flex-wrap: wrap; }
     html.port .chordpanel .side .mute { flex: 1 1 100%; }
     html.port .chordpanel .side select, html.port .chordpanel .side button { flex: 1; width: auto; }
@@ -69,6 +69,12 @@
     .gresult .row2 { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; font-size: 14px; color: var(--dim); }
     .gresult .row2 b { color: var(--text); }
     .gresult .btns { display: flex; gap: 10px; margin-top: 6px; }
+    /* 單機版：這份畫面放進 iPad 頁面右下角的 shadow DOM，iPad 頁面會把 html.xxx 換成 :host(.xxx)、:root 換成 :host */
+    /* 連線狀態、房號、全螢幕、樂器名稱都由 iPad 頁面負責；安全區域 iPad 頁面已經留過了 */
+    html.embed { --bar-h: 40px; --sat: 0px; --sar: 0px; --sab: 0px; --sal: 0px; }
+    html.embed .app { position: absolute; }
+    html.embed .bar .status, html.embed .bar .room, html.embed #fsBtn, html.embed #instLbl { display: none; }
+    html.embed.tight .chordpanel .pad svg, html.embed.tight .chordpanel .pad .fr { display: none; }
     .start input { font-size: 40px; width: 200px; text-align: center; letter-spacing: 10px; font-weight: 900; padding: 8px; border-radius: 14px; }
     html.short .start input { font-size: 28px; padding: 4px; width: 170px; }
     html.short .start .link { padding: 2px; }

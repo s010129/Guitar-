@@ -456,13 +456,16 @@
 
   // 禁止 iOS 縮放、雙擊放大、長按選單（.scroll 和頂部工具列仍可捲動）
   function lockGestures() {
+    // 真正被點到的元素：單機版的左手區在 shadow DOM 裡，e.target 只會看到外面的容器
+    const real = (e) => (e.composedPath && e.composedPath()[0]) || e.target;
+    const near = (e, sel) => { const t = real(e); return !!(t && t.closest && t.closest(sel)); };
     ['gesturestart', 'gesturechange', 'gestureend'].forEach((t) => document.addEventListener(t, (e) => e.preventDefault()));
-    document.addEventListener('touchmove', (e) => { if (!e.target.closest('.scroll, .bar')) e.preventDefault(); }, { passive: false });
+    document.addEventListener('touchmove', (e) => { if (!near(e, '.scroll, .bar')) e.preventDefault(); }, { passive: false });
     document.addEventListener('contextmenu', (e) => e.preventDefault());
     let last = 0;
     document.addEventListener('touchend', (e) => {
       const now = Date.now();
-      if (now - last < 300 && !e.target.closest('input,select,button,.allow-dbl')) e.preventDefault();
+      if (now - last < 300 && !near(e, 'input,select,button,.allow-dbl')) e.preventDefault();
       last = now;
     }, { passive: false });
   }
@@ -475,5 +478,53 @@
     return val;
   }
 
-  G.Net = { Link, PREFIX, keepAwake: requestAwake, lockGestures, store };
+  // ---------- 單機版：iPad 頁面 ↔ 同一頁右下角的左手區 ----------
+  // 兩端的介面和 Link 一樣（send / connected / onOpen / onMessage / onStatus / onLatency），
+  // 只是在同一頁裡直接傳（下一個 microtask），不經過網路、沒有延遲。
+  // 收到的訊息附上 meta.at = 送出時的 performance.now()（同一頁，時鐘相同）
+  function localPair() {
+    const ends = {};
+    let open = false;
+    const make = (side, h) => {
+      const other = side === 'host' ? 'guest' : 'host';
+      const ep = {
+        onMessage: h.onMessage || (() => {}),
+        onStatus: h.onStatus || (() => {}),
+        onOpen: h.onOpen || (() => {}),
+        onLatency: h.onLatency || (() => {}),
+        get connected() { return open; },
+        send(msg) {
+          if (!open) return;
+          const at = performance.now();
+          queueMicrotask(() => { if (open && ends[other]) ends[other].onMessage(msg, { at }); });
+        },
+        host() {},
+        join() {},
+      };
+      ends[side] = ep;
+      return ep;
+    };
+    return {
+      host: (h) => make('host', h),
+      guest: (h) => make('guest', h),
+      get open() { return open; },
+      // host：打開 / 關掉單機版
+      setOpen(on) {
+        if (open === !!on || !ends.host || !ends.guest) return;
+        open = !!on;
+        for (const ep of [ends.host, ends.guest]) {
+          if (open) {
+            ep.onStatus('connected', '單機版');
+            ep.onLatency(0);
+          } else ep.onStatus('waiting', '單機版已關閉');
+        }
+        if (open) {
+          ends.host.onOpen();
+          ends.guest.onOpen();
+        }
+      },
+    };
+  }
+
+  G.Net = { Link, localPair, PREFIX, keepAwake: requestAwake, lockGestures, store };
 })(window);
