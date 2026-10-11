@@ -1057,9 +1057,9 @@
   // 左手區不用 iframe：iPad Safari 一次多點觸控只會送到同一個文件，左手按弦、右手刷弦必須在同一頁。
   // 所以把手機版的左手畫面（left.html 的內容和樣式）放進 shadow DOM，id 和樣式都不會和這一頁衝突
   const soloBox = $('soloBox');
-  // 手機版的樣式是寫給整頁的：html.xxx → :host(.xxx)、:root / html, body → :host
+  // 手機版的樣式是寫給整頁的：html.xxx → :host(.xxx)、html, body → :host。
+  // :root 不換：那些顏色、安全區域變數直接從這一頁繼承（轉向時的安全區域對應也要用這一頁的）
   const scopeCss = (css) => css
-    .replace(/:root\b/g, ':host')
     .replace(/\bhtml,\s*body\b/g, ':host')
     .replace(/\bhtml((?:\.[\w-]+|:not\([^)]*\))+)/g, ':host($1)');
   const soloRoot = () => soloBox.shadowRoot || soloBox.attachShadow({ mode: 'open' });
@@ -1119,8 +1119,9 @@
   function applySolo() {
     const on = !!settings.solo;
     soloBox.classList.toggle('hidden', !on);
-    soloBox.style.width = settings.soloW + '%';
-    soloBox.style.height = settings.soloH + '%';
+    // 多出來的安全區域加在寬高上：上緣、左緣的位置不變，吉他那一段也不受影響
+    soloBox.style.width = `calc(${settings.soloW}% + var(--sar))`;
+    soloBox.style.height = `calc(${settings.soloH}% + var(--sab))`;
     $('soloMode').checked = on;
     $('startSolo').checked = on;
     document.querySelectorAll('.soloopt').forEach((r) => r.classList.toggle('hidden', !on));

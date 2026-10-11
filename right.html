@@ -31,7 +31,8 @@
     .steps { color: var(--dim); line-height: 1.7; font-size: 14px; padding-left: 20px; margin: 8px 0; }
     /* 單機版：左手區在右下角（裡面是 shadow DOM 版的手機左手畫面），寬高可以調 */
     /* 不設 z-index：左手區的設定 / 和弦選擇視窗才會蓋過演奏模式的工具列按鈕。min-width：窄 iPad 上工具列和和弦按鈕才放得下 */
-    .solo { position: absolute; right: 0; bottom: 0; min-width: min(360px, 100%); overflow: hidden; border-top: 1px solid var(--line); border-left: 1px solid var(--line); border-top-left-radius: 14px; box-shadow: -6px -6px 24px rgba(0, 0, 0, .45); background: var(--bg); }
+    /* 往下、往右延伸到螢幕邊緣（蓋過 Home 指示條那一條安全區域），左手區才會貼齊螢幕底部 */
+    .solo { position: absolute; right: calc(-1 * var(--sar)); bottom: calc(-1 * var(--sab)); min-width: min(360px, 100%); overflow: hidden; border-top: 1px solid var(--line); border-left: 1px solid var(--line); border-top-left-radius: 14px; box-shadow: -6px -6px 24px rgba(0, 0, 0, .45); background: var(--bg); }
     .rv { display: flex; align-items: center; gap: 8px; }
     .rv b { min-width: 42px; text-align: right; }
     .startopt { display: flex; align-items: center; gap: 10px; font-size: 16px; color: var(--text); background: rgba(0, 0, 0, .25); border: 1px solid var(--line); border-radius: 12px; padding: 8px 14px; }
