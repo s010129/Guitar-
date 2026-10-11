@@ -69,7 +69,7 @@
     .gresult .row2 { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; font-size: 14px; color: var(--dim); }
     .gresult .row2 b { color: var(--text); }
     .gresult .btns { display: flex; gap: 10px; margin-top: 6px; }
-    /* 單機版：這份畫面放進 iPad 頁面右下角的 shadow DOM，iPad 頁面會把 html.xxx 換成 :host(.xxx)、:root 換成 :host */
+    /* 單機版：這份畫面放進 iPad 頁面右下角的 shadow DOM，iPad 頁面會把 html.xxx 換成 :host(.xxx)、html, body 換成 :host；:root 的變數直接從 iPad 頁面繼承 */
     /* 連線狀態、房號、全螢幕、樂器名稱都由 iPad 頁面負責；安全區域 iPad 頁面已經留過了 */
     html.embed { --bar-h: 40px; }
     /* 安全區域歸零只放在裡面的 .app：外框（iPad 頁面的 #soloBox）還要用真正的值延伸到螢幕邊緣 */
