@@ -157,8 +157,11 @@ function mountLeftHand(opts) {
     // 手機直放又沒轉向時改成直的指板；單機版一律橫的，和上面吉他的弦同方向
     const portrait = !EMBED && H > W;
     if (EMBED && opts.host) {
-      opts.host.classList.toggle('port', H > W); // 只影響和弦按鈕 / 選歌的排法
-      opts.host.classList.toggle('tight', H < 250); // 很矮：和弦按鈕只留名字
+      // 只影響和弦按鈕 / 選歌的排法：左手區比較高、或窄到一排放不下 4 個和弦 + 右邊那欄時，改成兩欄
+      const portC = H > W || (W - 136) / 4 < 60;
+      const padH = portC ? (H - 160) / 4 : (H - 24) / 2;
+      opts.host.classList.toggle('port', portC);
+      opts.host.classList.toggle('tight', padH < 96); // 按鈕太矮：只留和弦名字
     }
     const Lu = portrait ? H : W;
     const Lv = portrait ? W : H;
@@ -476,13 +479,12 @@ function mountLeftHand(opts) {
       b.innerHTML = `<span class="nm">${ch ? ch.name : name}</span>${UI.chordSVG(frets)}<span class="fr">${M.fretsToString(frets)}</span>`;
       b.addEventListener('pointerdown', (e) => {
         e.preventDefault();
-        if (st.editing) openPicker(i);
-        else {
-          st.padSel = st.padSel === i ? -1 : i;
-          markPads();
-          sendState();
-        }
+        if (st.editing) return; // 編輯時在 click 才打開：不然同一下點擊的 click 會落在剛打開的視窗背景上，又把它關掉
+        st.padSel = st.padSel === i ? -1 : i;
+        markPads();
+        sendState();
       });
+      b.addEventListener('click', () => { if (st.editing) openPicker(i); });
       box.appendChild(b);
     });
   }

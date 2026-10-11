@@ -67,14 +67,22 @@
   let linkText = '準備中';
   // 連線燈號：單機版沒連手機時顯示「單機版」，不要一直顯示等待手機
   function renderStatus() {
-    const solo = settings.solo && !link.connected;
-    const state = solo ? 'connected' : linkState;
+    let state = linkState;
+    let text = linkText;
+    if (settings.solo && !link.connected) {
+      if (left && pair.open) { state = 'connected'; text = '單機版'; }
+      else if (leftFailed) { state = 'error'; text = '左手區載入失敗'; }
+      else { state = 'waiting'; text = '左手區載入中…'; }
+    }
     UI.statusDot($('dot'), state);
     UI.statusDot($('dot2'), state);
-    $('statusText').textContent = solo ? '單機版' : linkText;
+    $('statusText').textContent = text;
   }
   // 單機版：右下角的左手區在同一頁裡，用同頁連線直接溝通（不經過網路）
   const pair = Net.localPair();
+  let left = null; // 掛好的左手區（mountLeftHand 回傳的東西）
+  let leftLoading = false;
+  let leftFailed = false; // 載入失敗：顯示重試，和弦列先還給使用者
   const local = pair.host({
     onStatus(state) { if (state !== 'connected') stopMetro('local'); },
     onMessage: (d, meta) => onMessage(d, 'local', meta),
@@ -916,7 +924,9 @@
   }
 
   function updateChordBarVisibility() {
-    const show = !settings.solo && (st.chordBar == null ? !link.connected : st.chordBar); // 單機版有自己的左手區
+    const soloLeft = settings.solo && !leftFailed; // 單機版有自己的左手區（載入失敗時和弦列先還回來）
+    const show = !soloLeft && (st.chordBar == null ? !link.connected : st.chordBar);
+    $('chordBtn').classList.toggle('hidden', soloLeft);
     const bar = $('chordBar');
     if (bar.classList.contains('hidden') === !show) return;
     bar.classList.toggle('hidden', !show);
@@ -1047,20 +1057,36 @@
   // 左手區不用 iframe：iPad Safari 一次多點觸控只會送到同一個文件，左手按弦、右手刷弦必須在同一頁。
   // 所以把手機版的左手畫面（left.html 的內容和樣式）放進 shadow DOM，id 和樣式都不會和這一頁衝突
   const soloBox = $('soloBox');
-  let left = null; // 掛好的左手區（mountLeftHand 回傳的東西）
-  let leftLoading = false;
   // 手機版的樣式是寫給整頁的：html.xxx → :host(.xxx)、:root / html, body → :host
   const scopeCss = (css) => css
     .replace(/:root\b/g, ':host')
     .replace(/\bhtml,\s*body\b/g, ':host')
     .replace(/\bhtml((?:\.[\w-]+|:not\([^)]*\))+)/g, ':host($1)');
+  const soloRoot = () => soloBox.shadowRoot || soloBox.attachShadow({ mode: 'open' });
+  // 載入中 / 失敗的訊息直接顯示在左手區裡（主畫面 App 沒有重新整理按鈕，所以給「重試」）
+  function soloMessage(failed) {
+    const sr = soloRoot();
+    sr.innerHTML = `<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:12px;text-align:center;color:#a99c8c;font:15px -apple-system,sans-serif">${failed
+      ? '<div>左手區載入失敗<br><small>請確認網路，再按重試</small></div><button id="soloRetry" style="font:inherit;font-size:17px;font-weight:700;padding:10px 26px;border-radius:12px;border:0;background:#f2a83b;color:#1b1206">重試</button>'
+      : '<div>左手區載入中…</div>'}</div>`;
+    const b = sr.getElementById('soloRetry');
+    if (b) b.addEventListener('click', loadLeftNow);
+  }
   async function loadLeft() {
-    const [html, css] = await Promise.all(['left.html', 'css/style.css'].map((u) => fetch(u).then((r) => {
-      if (!r.ok) throw new Error(u + ' ' + r.status);
-      return r.text();
-    })));
+    // 沒有回應的請求最多等 10 秒（iOS 預設不會逾時），之後就能重試
+    const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = setTimeout(() => ctl && ctl.abort(), 10000);
+    let html, css;
+    try {
+      [html, css] = await Promise.all(['left.html', 'css/style.css'].map((u) => fetch(u, ctl ? { signal: ctl.signal } : undefined).then((r) => {
+        if (!r.ok) throw new Error(u + ' ' + r.status);
+        return r.text();
+      })));
+    } finally {
+      clearTimeout(timer);
+    }
     const doc = new DOMParser().parseFromString(html, 'text/html');
-    const sr = soloBox.shadowRoot || soloBox.attachShadow({ mode: 'open' });
+    const sr = soloRoot();
     sr.innerHTML = '';
     const style = document.createElement('style');
     style.textContent = scopeCss(css + '\n' + [...doc.querySelectorAll('style')].map((x) => x.textContent).join('\n'));
@@ -1069,6 +1095,27 @@
     soloBox.classList.add('embed');
     left = mountLeftHand({ root: sr, host: soloBox, Link: function (h) { return pair.guest(h); } });
   }
+  function loadLeftNow() {
+    if (left || leftLoading) return;
+    leftLoading = true;
+    leftFailed = false;
+    soloMessage(false);
+    renderStatus();
+    loadLeft().then(() => {
+      if (settings.solo) pair.setOpen(true);
+    }).catch((e) => {
+      console.warn(e);
+      leftFailed = true;
+      soloMessage(true);
+    }).finally(() => {
+      leftLoading = false;
+      renderStatus();
+      updateChordBarVisibility();
+    });
+  }
+  // 網路恢復、或從背景回來時，自動再試一次
+  window.addEventListener('online', () => { if (settings.solo && leftFailed) loadLeftNow(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && settings.solo && leftFailed) loadLeftNow(); });
   function applySolo() {
     const on = !!settings.solo;
     soloBox.classList.toggle('hidden', !on);
@@ -1076,8 +1123,6 @@
     soloBox.style.height = settings.soloH + '%';
     $('soloMode').checked = on;
     $('startSolo').checked = on;
-    $('chordBtn').classList.toggle('hidden', on); // 和弦列讓給左手區
-    renderStatus();
     document.querySelectorAll('.soloopt').forEach((r) => r.classList.toggle('hidden', !on));
     if (on) {
       if (st.padSel >= 0) {
@@ -1085,21 +1130,14 @@
         markPads();
       }
       if (left) pair.setOpen(true);
-      else if (!leftLoading) {
-        leftLoading = true;
-        loadLeft().then(() => {
-          if (settings.solo) pair.setOpen(true);
-        }).catch((e) => {
-          console.warn(e);
-          UI.toast('左手區載入失敗，請檢查網路後重新整理', 3500);
-        }).finally(() => { leftLoading = false; });
-      }
+      else loadLeftNow(); // 失敗過的話，重新打開單機版也會再試
     } else if (pair.open) {
       pair.setOpen(false); // 左手區那邊會停掉正在玩的歌
       stopMetro('local');
       applyLeft(new Array(nStr()).fill(0), 'chord'); // 放開左手區按住的弦
       sendCfg(); // 有連手機的話，手機會馬上把它的左手狀態送過來
     }
+    renderStatus();
     updateChordBarVisibility();
     layout();
   }
