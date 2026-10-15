@@ -130,6 +130,8 @@
   <div class="modal hidden" id="setModal">
     <div class="sheet scroll">
       <h2>指板設定</h2>
+      <div class="row"><label>點弦也會發聲<small>按下琴格就出聲（搥弦 / Tapping）。和 iPad ⚙︎ 裡的同一個設定同步</small></label><input type="checkbox" id="tapSound"></div>
+      <div class="row"><label>長按固定<small>同一格按住 1.5 秒就固定按著（變藍色），放開手也不會鬆開；點一下藍色的音就放開</small></label><input type="checkbox" id="latch"></div>
       <div class="row"><label>指板大小<small>從上方往下等比縮小，底邊貼齊手機橫放時的下緣</small></label><span style="display:flex;align-items:center;gap:8px"><input type="range" id="boardSize" min="35" max="100" step="5" aria-label="指板大小"><b id="boardSizeVal" style="min-width:42px;text-align:right">100%</b></span></div>
       <div class="row"><label>顯示格數</label><select id="fretCount"></select></div>
       <div class="row"><label>弦序翻轉<small>預設最粗的弦在上面（橫放）/ 左邊（直放）</small></label><input type="checkbox" id="flip"></div>

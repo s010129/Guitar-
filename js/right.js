@@ -114,6 +114,13 @@
   function onMessage(d, src, meta) {
     if (d.t === 'hello') sendCfg();
     else if (d.t === 'game') handleGame(d, src, meta);
+    else if (d.t === 'tap') {
+      // 左手那邊切換「點弦也會發聲」：存在 iPad（聲音在這裡），再告訴另一個左手
+      settings.tapping = !!d.on;
+      store('r.settings', settings);
+      $('tapping').checked = settings.tapping;
+      sendCfg();
+    }
     else if (d.t === 'stage') {
       // 手機切換演奏模式：iPad 跟著切（兩邊是同一把吉他）
       if (!!d.on !== !!settings.stage) {
@@ -194,7 +201,7 @@
 
   function sendCfg() {
     const t = tuningObj();
-    sendLeft({ t: 'cfg', inst: st.inst, name: inst().name, n: nStr(), tuning: t.notes, tuneId: t.id, tuneName: t.name, capo: st.capo, stage: !!settings.stage });
+    sendLeft({ t: 'cfg', inst: st.inst, name: inst().name, n: nStr(), tuning: t.notes, tuneId: t.id, tuneName: t.name, capo: st.capo, stage: !!settings.stage, tap: !!settings.tapping });
   }
 
   // ---------------- 左手狀態 → 聲音 ----------------
@@ -1038,7 +1045,7 @@
   bindRange('volume', 'volume', (v) => audio.setVolume(v));
   bindRange('reverb', 'reverb', (v) => audio.setReverb(v));
   bindRange('sens', 'sens');
-  bindCheck('tapping', 'tapping');
+  bindCheck('tapping', 'tapping', () => sendCfg()); // 左手的設定畫面也顯示同一個狀態
   bindCheck('labels', 'labels', () => { dirty = true; });
   bindCheck('flip', 'flip', () => layout());
   bindCheck('stageMode', 'stage', () => applyStage());

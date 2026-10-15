@@ -29,7 +29,9 @@ function mountLeftHand(opts) {
     frets: new Array(cfg.n).fill(0),
     lastKey: '',
     gameChord: null, // 音遊模式自動按好的和弦（名稱；指型依 iPad 目前的樂器 / 調弦算）
+    latches: [], // 長按固定住的音：{ fret, strings:Set }（指板模式；放開手指也繼續按著）
   };
+  const LATCH_MS = 1500;
   let game = null; // 音遊模式（RhythmGame）
   let lastLat = 0; // 網路單程延遲（ms），音遊判定用
   const wireMode = () => (st.mode === 'fret' ? 'fret' : 'chord'); // 音遊模式換和弦也照和弦模式處理
@@ -87,7 +89,9 @@ function mountLeftHand(opts) {
   function applyCfg(d) {
     const changed = d.n !== cfg.n;
     Object.assign(cfg, { inst: d.inst, name: d.name, n: d.n, tuning: d.tuning, tuneId: d.tuneId, tuneName: d.tuneName, capo: d.capo || 0 });
+    if (typeof d.tap === 'boolean') cfg.tap = d.tap; // 「點弦也會發聲」是 iPad 的設定，這裡顯示同一個狀態
     store(KEY + 'cfg', cfg);
+    $('tapSound').checked = !!cfg.tap;
     // 跟著 iPad 的演奏模式（抱吉他、面向觀眾）一起左右翻轉
     if (typeof d.stage === 'boolean' && d.stage !== !!settings.perform) {
       setPerform(d.stage, false);
@@ -98,6 +102,7 @@ function mountLeftHand(opts) {
       // 清掉觸控前，先放開它們按住的「悶音」，否則之後放手也解除不了
       for (const p of ptrs.values()) if (p.kind === 'mute') st.muteHold = Math.max(0, st.muteHold - 1);
       ptrs.clear();
+      st.latches = [];
       amp.length = 0;
     }
     $('instLbl').textContent = cfg.name + (cfg.capo ? ` · capo ${cfg.capo}` : '');
@@ -124,6 +129,7 @@ function mountLeftHand(opts) {
         if (p.kind !== 'fret') continue;
         for (const s of p.strings) if (s < n) f[s] = Math.max(f[s], p.fret);
       }
+      for (const L of st.latches) for (const s of L.strings) if (s < n) f[s] = Math.max(f[s], L.fret);
     }
     if (st.muteHold > 0) f = f.map(() => -1);
     return f;
@@ -332,7 +338,20 @@ function mountLeftHand(opts) {
       ctx.fill();
     }
 
-    // 按住的位置
+    // 長按固定住的橫按：藍色橫條
+    const inView = (f) => f >= st.start && f < st.start + g.count;
+    for (const L of st.latches) {
+      if (L.strings.size < 2 || !inView(L.fret)) continue;
+      const rows = [...L.strings].map(rowOf);
+      const mu = cellMid(L.fret);
+      const half = Math.min(16, (g.edges[1] - g.edges[0]) * 0.25);
+      ctx.fillStyle = 'rgba(108,200,255,.7)';
+      ctx.beginPath();
+      rectUV(mu - half, v0 + (Math.min(...rows) + 0.5) * rowH, mu + half, v0 + (Math.max(...rows) + 0.5) * rowH);
+      ctx.fill();
+    }
+
+    // 按住的位置（固定住的是藍色）
     ctx.font = '800 14px -apple-system, sans-serif';
     for (let s = 0; s < n; s++) {
       const f = st.frets[s];
@@ -340,15 +359,29 @@ function mountLeftHand(opts) {
       const mu = cellMid(f);
       const v = vOf(s);
       const r = Math.min(rowH * 0.36, 20);
+      const locked = latchedAt(s) === f;
       ctx.beginPath();
       circleUV(mu, v, r);
-      ctx.fillStyle = '#f2a83b';
-      ctx.shadowColor = 'rgba(242,168,59,.8)';
+      ctx.fillStyle = locked ? '#6cc8ff' : '#f2a83b';
+      ctx.shadowColor = locked ? 'rgba(108,200,255,.8)' : 'rgba(242,168,59,.8)';
       ctx.shadowBlur = 12;
       ctx.fill();
       ctx.shadowBlur = 0;
       ctx.fillStyle = '#1b1206';
       textUV(settings.names ? M.noteName(cfg.tuning[s] + cfg.capo + f) : String(f), mu, v + 0.5);
+    }
+
+    // 長按中：圈圈慢慢畫滿，滿了就固定
+    for (const p of ptrs.values()) {
+      if (p.kind !== 'fret' || !p.holdT0 || p.latched || !inView(p.fret)) continue;
+      const k = Math.min(1, (now - p.holdT0) / LATCH_MS);
+      const c = toXY(cellMid(p.fret), vOf(p.lastS));
+      const r = Math.min(rowH * 0.36, 20) + 6;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, r, -Math.PI / 2, -Math.PI / 2 + k * Math.PI * 2);
+      ctx.strokeStyle = '#6cc8ff';
+      ctx.lineWidth = 4;
+      ctx.stroke();
     }
 
     // 左側：弦名 / 悶音切換
@@ -401,6 +434,7 @@ function mountLeftHand(opts) {
         anim = true;
       }
     }
+    for (const p of ptrs.values()) if (p.holdT0 && !p.latched) anim = true; // 長按的圈圈
     if ((anim || dirty) && st.mode === 'fret') {
       draw(now);
       dirty = false;
@@ -428,10 +462,37 @@ function mountLeftHand(opts) {
       st.muteHold++;
       ptrs.set(e.pointerId, { kind: 'mute' });
     } else {
-      ptrs.set(e.pointerId, { kind: 'fret', fret: fretAtU(u), strings: new Set([s]), lastS: s });
+      const fret = fretAtU(u);
+      const p = { kind: 'fret', id: e.pointerId, fret, strings: new Set([s]), lastS: s, t0: performance.now(), moved: false };
+      // 按在固定住的音上：點一下（放開時）就放開它；長按不會重複固定
+      p.onLatch = st.latches.find((L) => L.fret === fret && L.strings.has(s)) || null;
+      if (settings.latch && !p.onLatch) startHold(p);
+      ptrs.set(e.pointerId, p);
     }
     sendState();
   });
+
+  // ---------------- 長按固定 ----------------
+  const latchedAt = (s) => { const L = st.latches.find((x) => x.strings.has(s)); return L ? L.fret : null; };
+  function startHold(p) {
+    clearTimeout(p.holdTimer);
+    p.holdT0 = performance.now();
+    p.holdTimer = setTimeout(() => {
+      if (ptrs.get(p.id) !== p || st.mode !== 'fret' || !settings.latch) return; // 手指已經放開了
+      // 同一條弦只能按一個地方：新固定的取代舊的
+      for (const L of st.latches) for (const s of p.strings) L.strings.delete(s);
+      st.latches = st.latches.filter((L) => L.strings.size).concat([{ fret: p.fret, strings: new Set(p.strings) }]);
+      p.latched = true;
+      if (navigator.vibrate) try { navigator.vibrate(25); } catch (e) { /* 不支援就算了 */ }
+      dirty = true;
+      sendState();
+    }, LATCH_MS);
+  }
+  function clearLatches() {
+    if (!st.latches.length) return;
+    st.latches = [];
+    sendState();
+  }
 
   cv.addEventListener('pointermove', (e) => {
     const p = ptrs.get(e.pointerId);
@@ -445,8 +506,11 @@ function mountLeftHand(opts) {
       if (!(p.strings.size > 1 && p.strings.has(s))) p.strings = new Set([s]);
       p.fret = f;
       p.lastS = s;
+      p.moved = true;
+      if (p.holdT0 && !p.latched) startHold(p); // 換格了：長按重新計時
       changed = true;
     } else if (s !== p.lastS) {
+      p.moved = true;
       // 同一格往旁邊的弦拖 = 橫按（封閉和弦）
       const a = Math.min(rowOf(s), rowOf(p.lastS)), b = Math.max(rowOf(s), rowOf(p.lastS));
       for (let r = a; r <= b; r++) p.strings.add(settings.flip ? g.n - 1 - r : r);
@@ -461,6 +525,11 @@ function mountLeftHand(opts) {
     if (!p) return;
     ptrs.delete(e.pointerId);
     if (p.kind === 'mute') st.muteHold = Math.max(0, st.muteHold - 1);
+    if (p.kind === 'fret') {
+      clearTimeout(p.holdTimer);
+      // 點一下固定住的音（沒有滑走、很快放開）＝放開它
+      if (p.onLatch && !p.moved && performance.now() - p.t0 < 500) st.latches = st.latches.filter((L) => L !== p.onLatch);
+    }
     sendState();
   };
   cv.addEventListener('pointerup', up);
@@ -720,6 +789,25 @@ function mountLeftHand(opts) {
   $('perform').checked = !!settings.perform;
   $('perform').addEventListener('change', () => setPerform($('perform').checked, true));
 
+  // 長按固定（左手自己的設定）
+  $('latch').checked = !!settings.latch;
+  $('latch').addEventListener('change', () => {
+    settings.latch = $('latch').checked;
+    store(KEY + 'settings', settings);
+    if (!settings.latch) clearLatches();
+  });
+  // 點弦也會發聲：是 iPad 的設定（聲音在 iPad），這裡切換就告訴 iPad
+  $('tapSound').checked = !!cfg.tap;
+  $('tapSound').addEventListener('change', () => {
+    if (!link.connected) {
+      $('tapSound').checked = !!cfg.tap;
+      UI.toast('連上 iPad 後才能切換（這是 iPad 的設定）', 2500);
+      return;
+    }
+    cfg.tap = $('tapSound').checked;
+    store(KEY + 'cfg', cfg);
+    link.send({ t: 'tap', on: cfg.tap });
+  });
   for (const key of ['flip', 'lefty', 'names', 'pullRing']) {
     const el = $(key);
     el.checked = !!settings[key];
@@ -761,6 +849,7 @@ function mountLeftHand(opts) {
     say('.gtitle small', '手機會自動按好和弦', '左手區會自動按好和弦，你只要在上面的琴弦照著刷');
     say('.sheet .row small', '底邊貼齊手機', '從上方往下等比縮小，底邊貼齊左手區的下緣');
     say('.sheet .row small', '和 iPad 同步', '指板左右翻轉（琴頭在右），和上面的吉他一起翻');
+    say('.sheet .row small', '和 iPad ⚙︎ 裡的同一個設定同步', '按下琴格就出聲（搥弦 / Tapping）。和上面 ⚙︎ 裡的同一個設定同步');
   }
   $('instLbl').textContent = cfg.name + (cfg.capo ? ` · capo ${cfg.capo}` : '');
   renderPads();
