@@ -207,7 +207,12 @@
   // ---------------- 左手狀態 → 聲音 ----------------
   const amp = [];
   const visTau = [];
+  let lastLeftSrc = null;
   function applyLeft(frets, src, pullRing) {
+    // 點弦發聲只算真的按下去：上一個狀態也是指板模式、而且不是全部悶住。
+    // 從和弦 / 音遊切回指板、放開悶音、重新連線時重新送來的（固定住的）音，不會自己響
+    const tapOk = settings.tapping && src === 'fret' && lastLeftSrc === 'fret' && !st.frets.every((f) => f < 0);
+    lastLeftSrc = src;
     for (let s = 0; s < nStr(); s++) {
       const old = st.frets[s];
       const neu = Number.isFinite(frets[s]) ? clamp(Math.round(frets[s]), -1, 24) : 0;
@@ -226,7 +231,7 @@
         // 搥弦 / 勾弦 / 滑音：弦還在響就滑到新音高
         audio.setFreq(s, freqOf(s, neu), Math.abs(neu - Math.max(0, old)) > 2 ? 30 : 12);
       }
-      if (settings.tapping && src === 'fret' && neu > 0 && neu > old && (amp[s] || 0) < 1.2) {
+      if (tapOk && neu > 0 && neu > old && (amp[s] || 0) < 1.2) {
         pluck(s, 0.42, geo ? geo.fbEnd : 0, 0, true);
       }
     }

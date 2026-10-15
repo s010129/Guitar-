@@ -371,6 +371,22 @@ function mountLeftHand(opts) {
       textUV(settings.names ? M.noteName(cfg.tuning[s] + cfg.capo + f) : String(f), mu, v + 0.5);
     }
 
+    // 固定住、但不在目前顯示範圍（◀▶ 移走了）的音：在那一側的邊緣顯示藍色的格數
+    for (let s = 0; s < n; s++) {
+      const f = st.frets[s];
+      if (st.mode !== 'fret' || f <= 0 || inView(f) || latchedAt(s) !== f) continue;
+      const left = f < st.start;
+      const u = left ? labelW + 16 : fretEnd - 16;
+      const r = Math.min(rowH * 0.3, 14);
+      ctx.beginPath();
+      circleUV(u, vOf(s), r);
+      ctx.fillStyle = '#6cc8ff';
+      ctx.fill();
+      ctx.fillStyle = '#0b2433';
+      ctx.font = '800 12px -apple-system, sans-serif';
+      textUV(String(f), u, vOf(s) + 0.5);
+    }
+
     // 長按中：圈圈慢慢畫滿，滿了就固定
     for (const p of ptrs.values()) {
       if (p.kind !== 'fret' || !p.holdT0 || p.latched || !inView(p.fret)) continue;
@@ -457,6 +473,10 @@ function mountLeftHand(opts) {
     const s = stringAtV(v);
     if (u < g.labelW) {
       st.muted[s] = !st.muted[s];
+      if (st.muted[s] && st.latches.some((L) => L.strings.has(s))) {
+        for (const L of st.latches) L.strings.delete(s); // 按 ✕ 悶掉：這條弦固定住的音也放開
+        st.latches = st.latches.filter((L) => L.strings.size);
+      }
       ptrs.set(e.pointerId, { kind: 'label' });
     } else if (u > g.fretEnd) {
       st.muteHold++;
@@ -507,14 +527,16 @@ function mountLeftHand(opts) {
       p.fret = f;
       p.lastS = s;
       p.moved = true;
-      if (p.holdT0 && !p.latched) startHold(p); // 換格了：長按重新計時
+      if (settings.latch) { p.latched = false; startHold(p); } // 換格了（也包括從固定的音滑走）：在新的格子重新計時
       changed = true;
     } else if (s !== p.lastS) {
       p.moved = true;
+      const before = p.strings.size;
       // 同一格往旁邊的弦拖 = 橫按（封閉和弦）
       const a = Math.min(rowOf(s), rowOf(p.lastS)), b = Math.max(rowOf(s), rowOf(p.lastS));
       for (let r = a; r <= b; r++) p.strings.add(settings.flip ? g.n - 1 - r : r);
       p.lastS = s;
+      if (settings.latch && p.strings.size > before) { p.latched = false; startHold(p); } // 橫按變寬：整條重新計時
       changed = true;
     }
     if (changed) sendState();
@@ -875,7 +897,7 @@ function mountLeftHand(opts) {
   if (!EMBED) document.addEventListener('pointerdown', () => Net.keepAwake(), { once: true }); // 單機版由 iPad 頁面負責
 
   // 給 iPad 頁面 / 測試用
-  return { st, cfg, link, settings, computeFrets, game, layout, cellXY: (s, f) => toXY(cellMid(f), vOf(s)) };
+  return { st, cfg, link, settings, computeFrets, game, layout, geo: () => g, cellXY: (s, f) => toXY(cellMid(f), vOf(s)) };
 }
 // 手機版（left.html）：自動掛在整頁上
 if (document.getElementById('tabFret')) window.__left = mountLeftHand();
